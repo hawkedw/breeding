@@ -430,15 +430,19 @@ def submit_registry(wb):
         log(f"last_row={last_row} last_col={last_col}")
         log(f"headers={headers}")
 
-        alias_to_name = {}
-        name_to_type  = {}
+        # header_to_name: подходит и русский алиас, и fieldName напрямую
+        header_to_name: dict[str, str] = {}
+        name_to_type:   dict[str, str] = {}
         for f in FIELDS_PARENT:
             n, al = f.get("n"), f.get("alias")
-            if n and al:
-                alias_to_name[al] = n
-                name_to_type[n]   = f.get("type")
+            t = f.get("type")
+            if n:
+                name_to_type[n] = t
+                header_to_name[n] = n       # fieldName -> fieldName
+                if al:
+                    header_to_name[al] = n  # alias     -> fieldName
 
-        log(f"alias_to_name keys={list(alias_to_name.keys())}")
+        log(f"header_to_name keys={list(header_to_name.keys())}")
 
         data_range = sh.Range(
             sh.Cells(2, 1),
@@ -465,14 +469,14 @@ def submit_registry(wb):
 
             attrs = {"GlobalID": str(parent_gid).strip()}
 
-            for col_idx, alias in enumerate(headers, start=1):
+            for col_idx, hdr in enumerate(headers, start=1):
                 if col_idx not in EDITABLE_COLS:
                     continue
-                if not alias or alias == DIRTY_ALIAS:
+                if not hdr or hdr == DIRTY_ALIAS:
                     continue
-                name = alias_to_name.get(alias)
+                name = header_to_name.get(str(hdr))
                 if not name:
-                    log(f"  col {col_idx} alias={alias!r} -> NOT FOUND in alias_to_name, skip")
+                    log(f"  col {col_idx} hdr={hdr!r} -> NOT FOUND in header_to_name, skip")
                     continue
                 if name.lower() in SYS_SKIP:
                     continue
