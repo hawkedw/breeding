@@ -33,47 +33,35 @@ def log(msg: str):
 DIRTY_ALIAS    = "Dirty"
 SHEET_REGISTRY = "Реестр опытов"
 
-# Родительский слой
 URL_PARENT = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breeding/FeatureServer/0"
-# Дочерняя таблица (customer)
 URL_CHILD  = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breeding/FeatureServer/1"
 
 SORT_FIELD = "created_date"
 
-# ---------- FIELD MAP (родительский слой -> столбцы) ----------
-# col=None — поля без фиксированного столбца (дочерние / служебные)
-
 FIELDS_PARENT = [
-    {"n": "country",          "alias": "Страна",                         "type": "TEXT",   "col": 1},   # A
-    {"n": "region",           "alias": "Регион",                         "type": "TEXT",   "col": 2},   # B
-    {"n": "site",             "alias": "Опытная площадка",               "type": "TEXT",   "col": 3},   # C
-    {"n": "devision",         "alias": "Отделение ЦСиПС",                "type": "TEXT",   "col": 4},   # D
-    {"n": "crop",             "alias": "Культура",                       "type": "TEXT",   "col": 5},   # E
-    {"n": "farm",             "alias": "Хозяйство (подразделение ПХ)",   "type": "TEXT",   "col": 6},   # F
-    {"n": "responsable",      "alias": "Отв. Лицо в ПХ",                 "type": "TEXT",   "col": 7},   # G
-    {"n": "fieldNumber",      "alias": "Номер поля",                     "type": "TEXT",   "col": 8},   # H
-    {"n": "areaHa",           "alias": "Площадь опыта, га",              "type": "NUMBER", "col": 9},   # I
-    {"n": "scheme",           "alias": "Схема опыта",                    "type": "TEXT",   "col": 10},  # J
-    {"n": "experimentName",   "alias": "Название опыта",                 "type": "TEXT",   "col": 11},  # K
-    {"n": "type",             "alias": "Тип опыта",                      "type": "TEXT",   "col": 12},  # L
-    {"n": "productPurpose",   "alias": "Назначение продукции опыта",     "type": "TEXT",   "col": 13},  # M
-    {"n": "trialPurpose",     "alias": "Цель, задача опыта",             "type": "TEXT",   "col": 14},  # N
-    {"n": "status",           "alias": "Статус опыта",                   "type": "TEXT",   "col": 15},  # O
-    {"n": "plantingDate",     "alias": "Дата посева",                    "type": "DATE",   "col": 16},  # P  -> dd.mm.yyyy
-    {"n": "haverstDate",      "alias": "Дата уборки",                    "type": "DATE",   "col": 17},  # Q  -> dd.mm.yyyy
-    {"n": "report",           "alias": "Отчёт (Выводы, рекомендации)",   "type": "TEXT",   "col": 18},  # R
-    # S — пустая
-    # T:W — customer из дочерней таблицы
-    # X:Z — пустые
-    {"n": "created_date",     "alias": "created_date",                   "type": "DATE",   "col": 27},  # AA -> dd.mm.yyyy hh:mm
-    {"n": "last_edited_date", "alias": "last_edited_date",               "type": "DATE",   "col": 28},  # AB -> dd.mm.yyyy hh:mm
-    # AC — Dirty
-    # AD — GlobalID родителя
-    # AE — GlobalID первой дочерней записи
+    {"n": "country",          "alias": "Страна",                         "type": "TEXT",   "col": 1},
+    {"n": "region",           "alias": "Регион",                         "type": "TEXT",   "col": 2},
+    {"n": "site",             "alias": "Опытная площадка",               "type": "TEXT",   "col": 3},
+    {"n": "devision",         "alias": "Отделение ЦСиПС",                "type": "TEXT",   "col": 4},
+    {"n": "crop",             "alias": "Культура",                       "type": "TEXT",   "col": 5},
+    {"n": "farm",             "alias": "Хозяйство (подразделение ПХ)",   "type": "TEXT",   "col": 6},
+    {"n": "responsable",      "alias": "Отв. Лицо в ПХ",                 "type": "TEXT",   "col": 7},
+    {"n": "fieldNumber",      "alias": "Номер поля",                     "type": "TEXT",   "col": 8},
+    {"n": "areaHa",           "alias": "Площадь опыта, га",              "type": "NUMBER", "col": 9},
+    {"n": "scheme",           "alias": "Схема опыта",                    "type": "TEXT",   "col": 10},
+    {"n": "experimentName",   "alias": "Название опыта",                 "type": "TEXT",   "col": 11},
+    {"n": "type",             "alias": "Тип опыта",                      "type": "TEXT",   "col": 12},
+    {"n": "productPurpose",   "alias": "Назначение продукции опыта",     "type": "TEXT",   "col": 13},
+    {"n": "trialPurpose",     "alias": "Цель, задача опыта",             "type": "TEXT",   "col": 14},
+    {"n": "status",           "alias": "Статус опыта",                   "type": "TEXT",   "col": 15},
+    {"n": "plantingDate",     "alias": "Дата посева",                    "type": "DATE",   "col": 16},
+    {"n": "haverstDate",      "alias": "Дата уборки",                    "type": "DATE",   "col": 17},
+    {"n": "report",           "alias": "Отчёт (Выводы, рекомендации)",   "type": "TEXT",   "col": 18},
+    {"n": "created_date",     "alias": "created_date",                   "type": "DATE",   "col": 27},
+    {"n": "last_edited_date", "alias": "last_edited_date",               "type": "DATE",   "col": 28},
 ]
 
-# Столбцы customer (дочерняя таблица), транспонируем до 4 строк в T:W
-CUSTOMER_COLS  = [20, 21, 22, 23]   # T=20, U=21, V=22, W=23
+CUSTOMER_COLS  = [20, 21, 22, 23]
 CUSTOMER_FIELD = "customer"
 CUSTOMER_ALIAS = "Заказчик опыта"
 
@@ -81,15 +69,10 @@ DIRTY_COL      = 29   # AC
 PARENT_GID_COL = 30   # AD
 CHILD_GID_COL  = 31   # AE
 
-TOTAL_COLS = CHILD_GID_COL   # 31
+TOTAL_COLS = CHILD_GID_COL
 
-# Редактируемые столбцы C:R (site..report) — только их пишем обратно
 EDITABLE_COLS = set(range(3, 19))
-
-# Системные поля — никогда не пишем обратно
 SYS_SKIP = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
-
-# Поля дат только без времени
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
 # ---------- AUTH ----------
@@ -126,8 +109,8 @@ def get_token() -> str:
 
 # ---------- DATE HELPERS ----------
 
-EPOCH      = datetime.datetime(1970, 1, 1)
-OFFSET     = datetime.timedelta(hours=3)   # MSK = UTC+3
+EPOCH       = datetime.datetime(1970, 1, 1)
+OFFSET      = datetime.timedelta(hours=3)
 EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 
 
@@ -266,7 +249,6 @@ def import_registry(wb):
     child_feats = query_layer(URL_CHILD, "1=1", "")
     log(f"Child: {len(child_feats)} records")
 
-    # parentglobalid -> [customer, ...]
     child_index: dict[str, list] = {}
     for cf in child_feats:
         attrs = cf.get("attributes", {})
@@ -299,7 +281,6 @@ def import_registry(wb):
                 sh.Cells.EntireColumn.Hidden = False
             except Exception:
                 pass
-            # Очищаем только данные (строки 2+), шапку не трогаем
             last_data_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
             if last_data_row >= 2:
                 sh.Range(sh.Cells(2, 1), sh.Cells(last_data_row, TOTAL_COLS)).ClearContents()
@@ -308,7 +289,6 @@ def import_registry(wb):
             sh.Name = SHEET_REGISTRY
             last_data_row = 1
 
-        # Заголовки — пишем только если A1 пустая
         if not sh.Cells(1, 1).Value:
             headers = [""] * TOTAL_COLS
             for f in FIELDS_PARENT:
@@ -325,7 +305,6 @@ def import_registry(wb):
         else:
             log("Headers intact, skipping")
 
-        # Строки данных
         data = []
         date_cols_log = {}
 
@@ -364,7 +343,6 @@ def import_registry(wb):
                 if i < len(customers):
                     row[c - 1] = customers[i] if customers[i] is not None else ""
 
-            # Dirty ставит только VBA Worksheet_Change, при импорте всегда False
             row[DIRTY_COL - 1]      = False
             row[PARENT_GID_COL - 1] = parent_gid
             row[CHILD_GID_COL - 1]  = child_gid
@@ -382,7 +360,6 @@ def import_registry(wb):
                 sh.Cells(1 + data_rows, TOTAL_COLS),
             ).Value = _to_2d(data)
 
-        # Формат дат
         if data_rows:
             for f in FIELDS_PARENT:
                 col = f.get("col")
@@ -401,11 +378,9 @@ def import_registry(wb):
                 except Exception as e:
                     log(f"[ERR] col {col} '{f['n']}' fmt crash: {e}")
 
-        # AutoFilter
         last_row = max(2, sh.Cells(sh.Rows.Count, 1).End(-4162).Row)
         sh.Range(sh.Cells(1, 1), sh.Cells(last_row, TOTAL_COLS)).AutoFilter()
 
-        # Freeze только строки (без колонок)
         _apply_freeze(excel, sh, 1, 0)
 
         log(f"import_registry complete: {data_rows} rows")
@@ -453,8 +428,8 @@ def submit_registry(wb):
         hdr_range = sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value
         headers   = list(hdr_range[0])
         log(f"last_row={last_row} last_col={last_col}")
+        log(f"headers={headers}")
 
-        # Строим маппинг alias -> fieldName по русским алиасам
         alias_to_name = {}
         name_to_type  = {}
         for f in FIELDS_PARENT:
@@ -462,6 +437,8 @@ def submit_registry(wb):
             if n and al:
                 alias_to_name[al] = n
                 name_to_type[n]   = f.get("type")
+
+        log(f"alias_to_name keys={list(alias_to_name.keys())}")
 
         data_range = sh.Range(
             sh.Cells(2, 1),
@@ -477,7 +454,9 @@ def submit_registry(wb):
         edits = []
         for r_idx, row in enumerate(data_range, start=2):
             row = list(row)
-            if not row[DIRTY_COL - 1]:
+            dirty_val = row[DIRTY_COL - 1]
+            log(f"Row {r_idx}: Dirty={dirty_val!r}  GlobalID={row[PARENT_GID_COL - 1]!r}")
+            if not dirty_val:
                 continue
             parent_gid = row[PARENT_GID_COL - 1]
             if parent_gid in (None, ""):
@@ -492,7 +471,10 @@ def submit_registry(wb):
                 if not alias or alias == DIRTY_ALIAS:
                     continue
                 name = alias_to_name.get(alias)
-                if not name or name.lower() in SYS_SKIP:
+                if not name:
+                    log(f"  col {col_idx} alias={alias!r} -> NOT FOUND in alias_to_name, skip")
+                    continue
+                if name.lower() in SYS_SKIP:
                     continue
 
                 v      = row[col_idx - 1]
@@ -523,6 +505,7 @@ def submit_registry(wb):
                 else:
                     attrs[name] = v
 
+            log(f"Row {r_idx}: attrs to send = {attrs}")
             edits.append({"attributes": attrs, "row": r_idx})
 
         if not edits:
@@ -532,6 +515,8 @@ def submit_registry(wb):
         log(f"Sending {len(edits)} updates (useGlobalIds=True)...")
 
         feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
+        log(f"applyEdits payload features: {feats_json}")
+
         payload = {
             "f": "json",
             "token": token,
@@ -541,6 +526,7 @@ def submit_registry(wb):
         }
         res = requests.post(URL_PARENT + "/applyEdits", data=payload, timeout=60)
         js  = res.json()
+        log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)}")
 
         if "error" in js:
             log(f"applyEdits error: {js['error']}")
