@@ -5,13 +5,22 @@ import sys, os, json, datetime
 import requests
 import win32com.client as win32
 
+# Форсируем UTF-8 для stdout/stderr (cp1251 не умеет ✓ ✗ и др.)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 LOG_PATH = os.path.join(os.path.dirname(__file__), "breedingSync.log")
 
 
 def log(msg: str):
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {msg}"
-    print(line)
+    try:
+        print(line)
+    except Exception:
+        pass
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(line + "\n")
@@ -380,9 +389,9 @@ def import_registry(wb):
                         rng.NumberFormatLocal = "ДД.ММ.ГГГГ" if date_only else "ДД.ММ.ГГГГ чч:мм"
                     except Exception:
                         pass
-                    log(f"✓ col {col} '{f['n']}' fmt='{fmt}'")
+                    log(f"[OK] col {col} '{f['n']}' fmt='{fmt}'")
                 except Exception as e:
-                    log(f"✗ col {col} '{f['n']}' fmt crash: {e}")
+                    log(f"[ERR] col {col} '{f['n']}' fmt crash: {e}")
 
         # AutoFilter
         last_row = max(2, sh.Cells(sh.Rows.Count, 1).End(-4162).Row)
@@ -536,7 +545,7 @@ def submit_registry(wb):
                 log(f"Row {row_idx}: OK")
             else:
                 err = r.get("error", {}).get("description", "?")
-                log(f"Row {row_idx}: FAILED — {err}")
+                log(f"Row {row_idx}: FAILED - {err}")
                 try:
                     sh.Cells(row_idx, DIRTY_COL).AddComment(err)
                 except Exception:
