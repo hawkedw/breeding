@@ -44,29 +44,29 @@ SORT_FIELD = "created_date"
 # col=None — поля без фиксированного столбца (дочерние / служебные)
 
 FIELDS_PARENT = [
-    {"n": "country",          "alias": "country",          "type": "TEXT",   "col": 1},   # A
-    {"n": "region",           "alias": "region",           "type": "TEXT",   "col": 2},   # B
-    {"n": "site",             "alias": "site",             "type": "TEXT",   "col": 3},   # C
-    {"n": "devision",         "alias": "devision",         "type": "TEXT",   "col": 4},   # D
-    {"n": "crop",             "alias": "crop",             "type": "TEXT",   "col": 5},   # E
-    {"n": "farm",             "alias": "farm",             "type": "TEXT",   "col": 6},   # F
-    {"n": "responsable",      "alias": "responsable",      "type": "TEXT",   "col": 7},   # G
-    {"n": "fieldNumber",      "alias": "fieldNumber",      "type": "TEXT",   "col": 8},   # H
-    {"n": "areaHa",           "alias": "areaHa",           "type": "NUMBER", "col": 9},   # I
-    {"n": "scheme",           "alias": "scheme",           "type": "TEXT",   "col": 10},  # J
-    {"n": "experimentName",   "alias": "experimentName",   "type": "TEXT",   "col": 11},  # K
-    {"n": "type",             "alias": "type",             "type": "TEXT",   "col": 12},  # L
-    {"n": "productPurpose",   "alias": "productPurpose",   "type": "TEXT",   "col": 13},  # M
-    {"n": "trialPurpose",     "alias": "trialPurpose",     "type": "TEXT",   "col": 14},  # N
-    {"n": "status",           "alias": "status",           "type": "TEXT",   "col": 15},  # O
-    {"n": "plantingDate",     "alias": "plantingDate",     "type": "DATE",   "col": 16},  # P  -> dd.mm.yyyy
-    {"n": "haverstDate",      "alias": "haverstDate",      "type": "DATE",   "col": 17},  # Q  -> dd.mm.yyyy
-    {"n": "report",           "alias": "report",           "type": "TEXT",   "col": 18},  # R
+    {"n": "country",          "alias": "Страна",                         "type": "TEXT",   "col": 1},   # A
+    {"n": "region",           "alias": "Регион",                         "type": "TEXT",   "col": 2},   # B
+    {"n": "site",             "alias": "Опытная площадка",               "type": "TEXT",   "col": 3},   # C
+    {"n": "devision",         "alias": "Отделение ЦСиПС",                "type": "TEXT",   "col": 4},   # D
+    {"n": "crop",             "alias": "Культура",                       "type": "TEXT",   "col": 5},   # E
+    {"n": "farm",             "alias": "Хозяйство (подразделение ПХ)",   "type": "TEXT",   "col": 6},   # F
+    {"n": "responsable",      "alias": "Отв. Лицо в ПХ",                 "type": "TEXT",   "col": 7},   # G
+    {"n": "fieldNumber",      "alias": "Номер поля",                     "type": "TEXT",   "col": 8},   # H
+    {"n": "areaHa",           "alias": "Площадь опыта, га",              "type": "NUMBER", "col": 9},   # I
+    {"n": "scheme",           "alias": "Схема опыта",                    "type": "TEXT",   "col": 10},  # J
+    {"n": "experimentName",   "alias": "Название опыта",                 "type": "TEXT",   "col": 11},  # K
+    {"n": "type",             "alias": "Тип опыта",                      "type": "TEXT",   "col": 12},  # L
+    {"n": "productPurpose",   "alias": "Назначение продукции опыта",     "type": "TEXT",   "col": 13},  # M
+    {"n": "trialPurpose",     "alias": "Цель, задача опыта",             "type": "TEXT",   "col": 14},  # N
+    {"n": "status",           "alias": "Статус опыта",                   "type": "TEXT",   "col": 15},  # O
+    {"n": "plantingDate",     "alias": "Дата посева",                    "type": "DATE",   "col": 16},  # P  -> dd.mm.yyyy
+    {"n": "haverstDate",      "alias": "Дата уборки",                    "type": "DATE",   "col": 17},  # Q  -> dd.mm.yyyy
+    {"n": "report",           "alias": "Отчёт (Выводы, рекомендации)",   "type": "TEXT",   "col": 18},  # R
     # S — пустая
     # T:W — customer из дочерней таблицы
     # X:Z — пустые
-    {"n": "created_date",     "alias": "created_date",     "type": "DATE",   "col": 27},  # AA -> dd.mm.yyyy hh:mm
-    {"n": "last_edited_date", "alias": "last_edited_date", "type": "DATE",   "col": 28},  # AB -> dd.mm.yyyy hh:mm
+    {"n": "created_date",     "alias": "created_date",                   "type": "DATE",   "col": 27},  # AA -> dd.mm.yyyy hh:mm
+    {"n": "last_edited_date", "alias": "last_edited_date",               "type": "DATE",   "col": 28},  # AB -> dd.mm.yyyy hh:mm
     # AC — Dirty
     # AD — GlobalID родителя
     # AE — GlobalID первой дочерней записи
@@ -75,7 +75,7 @@ FIELDS_PARENT = [
 # Столбцы customer (дочерняя таблица), транспонируем до 4 строк в T:W
 CUSTOMER_COLS  = [20, 21, 22, 23]   # T=20, U=21, V=22, W=23
 CUSTOMER_FIELD = "customer"
-CUSTOMER_ALIAS = "customer"
+CUSTOMER_ALIAS = "Заказчик опыта"
 
 DIRTY_COL      = 29   # AC
 PARENT_GID_COL = 30   # AD
@@ -299,24 +299,31 @@ def import_registry(wb):
                 sh.Cells.EntireColumn.Hidden = False
             except Exception:
                 pass
-            sh.Cells.Clear()
+            # Очищаем только данные (строки 2+), шапку не трогаем
+            last_data_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
+            if last_data_row >= 2:
+                sh.Range(sh.Cells(2, 1), sh.Cells(last_data_row, TOTAL_COLS)).ClearContents()
         except Exception:
             sh = wb.Worksheets.Add()
             sh.Name = SHEET_REGISTRY
+            last_data_row = 1
 
-        # Заголовки
-        headers = [""] * TOTAL_COLS
-        for f in FIELDS_PARENT:
-            col = f.get("col")
-            if col:
-                headers[col - 1] = f["alias"]
-        for c in CUSTOMER_COLS:
-            headers[c - 1] = CUSTOMER_ALIAS
-        headers[DIRTY_COL - 1]      = DIRTY_ALIAS
-        headers[PARENT_GID_COL - 1] = "GlobalID"
-        headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
-
-        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+        # Заголовки — пишем только если A1 пустая
+        if not sh.Cells(1, 1).Value:
+            headers = [""] * TOTAL_COLS
+            for f in FIELDS_PARENT:
+                col = f.get("col")
+                if col:
+                    headers[col - 1] = f["alias"]
+            for c in CUSTOMER_COLS:
+                headers[c - 1] = CUSTOMER_ALIAS
+            headers[DIRTY_COL - 1]      = DIRTY_ALIAS
+            headers[PARENT_GID_COL - 1] = "GlobalID"
+            headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
+            sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+            log("Headers written")
+        else:
+            log("Headers intact, skipping")
 
         # Строки данных
         data = []
@@ -357,6 +364,7 @@ def import_registry(wb):
                 if i < len(customers):
                     row[c - 1] = customers[i] if customers[i] is not None else ""
 
+            # Dirty ставит только VBA Worksheet_Change, при импорте всегда False
             row[DIRTY_COL - 1]      = False
             row[PARENT_GID_COL - 1] = parent_gid
             row[CHILD_GID_COL - 1]  = child_gid
@@ -397,8 +405,8 @@ def import_registry(wb):
         last_row = max(2, sh.Cells(sh.Rows.Count, 1).End(-4162).Row)
         sh.Range(sh.Cells(1, 1), sh.Cells(last_row, TOTAL_COLS)).AutoFilter()
 
-        # Freeze строка 1, столбец 3 (C)
-        _apply_freeze(excel, sh, 1, 3)
+        # Freeze только строки (без колонок)
+        _apply_freeze(excel, sh, 1, 0)
 
         log(f"import_registry complete: {data_rows} rows")
 
@@ -446,6 +454,7 @@ def submit_registry(wb):
         headers   = list(hdr_range[0])
         log(f"last_row={last_row} last_col={last_col}")
 
+        # Строим маппинг alias -> fieldName по русским алиасам
         alias_to_name = {}
         name_to_type  = {}
         for f in FIELDS_PARENT:
