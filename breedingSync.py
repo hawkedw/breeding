@@ -289,21 +289,19 @@ def import_registry(wb):
             sh.Name = SHEET_REGISTRY
             last_data_row = 1
 
-        if not sh.Cells(1, 1).Value:
-            headers = [""] * TOTAL_COLS
-            for f in FIELDS_PARENT:
-                col = f.get("col")
-                if col:
-                    headers[col - 1] = f["alias"]
-            for c in CUSTOMER_COLS:
-                headers[c - 1] = CUSTOMER_ALIAS
-            headers[DIRTY_COL - 1]      = DIRTY_ALIAS
-            headers[PARENT_GID_COL - 1] = "GlobalID"
-            headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
-            sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
-            log("Headers written")
-        else:
-            log("Headers intact, skipping")
+        # Всегда перезаписываем шапку с русскими алиасами
+        headers = [""] * TOTAL_COLS
+        for f in FIELDS_PARENT:
+            col = f.get("col")
+            if col:
+                headers[col - 1] = f["alias"]
+        for c in CUSTOMER_COLS:
+            headers[c - 1] = CUSTOMER_ALIAS
+        headers[DIRTY_COL - 1]      = DIRTY_ALIAS
+        headers[PARENT_GID_COL - 1] = "GlobalID"
+        headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
+        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+        log("Headers written")
 
         data = []
         date_cols_log = {}
