@@ -192,12 +192,15 @@ def _to_2d(rows):
 
 
 def attach_workbook(path: str):
-    xl = win32.Dispatch("Excel.Application")
     abs_path = os.path.abspath(path)
-    for wb in xl.Workbooks:
+    xl = win32.GetActiveObject("Excel.Application")
+    log(f"attach_workbook: GetActiveObject OK, looking for '{abs_path}'")
+    wbs = xl.Workbooks
+    for i in range(1, wbs.Count + 1):
+        wb = wbs.Item(i)
         if os.path.abspath(wb.FullName) == abs_path:
             log(f"attach_workbook: found '{wb.FullName}'")
-            return wb, False, xl, xl.Workbooks.Count
+            return wb, False, xl, wbs.Count
     raise RuntimeError(
         f"Книга '{abs_path}' не найдена среди открытых в Excel.\n"
         "Откройте файл breedingSync.xlsm и повторите."
@@ -596,7 +599,7 @@ def main(argv=None) -> int:
         wb.Save()
         return 0
     finally:
-        pass  # не закрываем книгу — пользователь работает с ней в Excel
+        pass
 
 
 if __name__ == "__main__":
