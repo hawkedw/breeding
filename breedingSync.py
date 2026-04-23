@@ -192,14 +192,25 @@ def _to_2d(rows):
 
 
 def attach_workbook(path: str):
-    xl = win32.Dispatch("Excel.Application")
+    """подключаемся к уже открытому Excel (книга запущена пользователем),
+    никогда не создаём новый процесс Excel."""
     abs_path = os.path.abspath(path)
+    try:
+        xl = win32.GetActiveObject("Excel.Application")
+        log("attach_workbook: connected to running Excel")
+    except Exception as e:
+        raise RuntimeError(
+            f"Excel не запущен или недоступен через COM: {e}\n"
+            "Убедитесь, что книга открыта в Excel перед запуском скрипта."
+        )
     for wb in xl.Workbooks:
         if os.path.abspath(wb.FullName) == abs_path:
+            log(f"attach_workbook: found open workbook '{wb.FullName}'")
             return wb, False, xl, xl.Workbooks.Count
-    prev_count = xl.Workbooks.Count
-    wb = xl.Workbooks.Open(abs_path)
-    return wb, True, xl, prev_count
+    raise RuntimeError(
+        f"Книга '{abs_path}' не найдена среди открытых в Excel.\n"
+        "Откройте файл breedingSync.xlsm и повторите."
+    )
 
 
 def _apply_freeze(excel, sh, rows, cols):
@@ -596,16 +607,7 @@ def main(argv=None) -> int:
         wb.Save()
         return 0
     finally:
-        if opened_here:
-            try:
-                wb.Close(SaveChanges=True)
-            except Exception:
-                pass
-            try:
-                if prev_count == 0 and excel.Workbooks.Count == 0:
-                    excel.Quit()
-            except Exception:
-                pass
+        pass  # не закрываем книгу — пользователь работает с ней в Excel
 
 
 if __name__ == "__main__":
