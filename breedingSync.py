@@ -192,21 +192,29 @@ def _to_2d(rows):
 
 
 def attach_workbook(path: str):
-    """подключаемся к уже открытому Excel (книга запущена пользователем),
-    никогда не создаём новый процесс Excel."""
+    """Подключаемся к уже открытому Excel через GetActiveObject.
+    Итерация Workbooks — через индекс, чтобы обойти баг dynamic COM."""
     abs_path = os.path.abspath(path)
     try:
-        xl = win32.GetActiveObject("Excel.Application")
-        log("attach_workbook: connected to running Excel")
+        xl_raw = win32.GetActiveObject("Excel.Application")
+        xl = win32.gencache.EnsureDispatch(xl_raw)
+        log("attach_workbook: connected to running Excel (EnsureDispatch)")
     except Exception as e:
         raise RuntimeError(
             f"Excel не запущен или недоступен через COM: {e}\n"
             "Убедитесь, что книга открыта в Excel перед запуском скрипта."
         )
-    for wb in xl.Workbooks:
-        if os.path.abspath(wb.FullName) == abs_path:
-            log(f"attach_workbook: found open workbook '{wb.FullName}'")
-            return wb, False, xl, xl.Workbooks.Count
+    count = xl.Workbooks.Count
+    log(f"attach_workbook: Workbooks.Count={count}")
+    for i in range(1, count + 1):
+        wb = xl.Workbooks(i)
+        try:
+            wb_path = os.path.abspath(wb.FullName)
+        except Exception:
+            continue
+        if wb_path == abs_path:
+            log(f"attach_workbook: found '{wb.FullName}'")
+            return wb, False, xl, count
     raise RuntimeError(
         f"Книга '{abs_path}' не найдена среди открытых в Excel.\n"
         "Откройте файл breedingSync.xlsm и повторите."
@@ -300,7 +308,6 @@ def import_registry(wb):
             sh.Name = SHEET_REGISTRY
             last_data_row = 1
 
-        # Всегда перезаписываем шапку с русскими алиасами
         headers = [""] * TOTAL_COLS
         for f in FIELDS_PARENT:
             col = f.get("col")
@@ -439,7 +446,6 @@ def submit_registry(wb):
         log(f"last_row={last_row} last_col={last_col}")
         log(f"headers={headers}")
 
-        # header_to_name: подходит и русский алиас, и fieldName напрямую
         header_to_name: dict[str, str] = {}
         name_to_type:   dict[str, str] = {}
         for f in FIELDS_PARENT:
@@ -447,9 +453,9 @@ def submit_registry(wb):
             t = f.get("type")
             if n:
                 name_to_type[n] = t
-                header_to_name[n] = n       # fieldName -> fieldName
+                header_to_name[n] = n
                 if al:
-                    header_to_name[al] = n  # alias     -> fieldName
+                    header_to_name[al] = n
 
         log(f"header_to_name keys={list(header_to_name.keys())}")
 
