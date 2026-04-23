@@ -4,6 +4,7 @@
 import sys, os, json, datetime
 import requests
 import win32com.client as win32
+import pythoncom
 
 # Форсируем UTF-8 для stdout/stderr (cp1251 не умеет ✓ ✗ и др.)
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -191,30 +192,86 @@ def _to_2d(rows):
     return tuple(tuple(r) for r in rows)
 
 
-def attach_workbook(path: str):
-    """Подключаемся к уже открытому Excel через GetActiveObject.
-    Итерация Workbooks — через индекс, чтобы обойти баг dynamic COM."""
-    abs_path = os.path.abspath(path)
-    try:
-        xl_raw = win32.GetActiveObject("Excel.Application")
-        xl = win32.gencache.EnsureDispatch(xl_raw)
-        log("attach_workbook: connected to running Excel (EnsureDispatch)")
-    except Exception as e:
-        raise RuntimeError(
-            f"Excel не запущен или недоступен через COM: {e}\n"
-            "Убедитесь, что книга открыта в Excel перед запуском скрипта."
-        )
-    count = xl.Workbooks.Count
-    log(f"attach_workbook: Workbooks.Count={count}")
-    for i in range(1, count + 1):
-        wb = xl.Workbooks(i)
+def _get_xl_app():
+    """Возвращает запущенный экземпляр Excel.Application через ROT.
+    Не использует Dispatch/EnsureDispatch, поэтому работает даже если
+    makepy не запущен и Excel отклоняет GetTypeInfo."""
+    context = pythoncom.CreateBindCtx(0)
+    rot = pythoncom.GetRunningObjectTable()
+    monikers = rot.EnumRunning()
+    excel_clsid = "{00024500-0000-0000-C000-000000000046}"  # Excel.Application
+    xl_obj = None
+    moniker = monikers.Next()
+    while moniker:
         try:
-            wb_path = os.path.abspath(wb.FullName)
+            name = moniker.GetDisplayName(context, None)
+            obj  = rot.GetObject(moniker)
+            disp = win32.Dispatch(obj.QueryInterface(pythoncom.IID_IDispatch))
+            # проверяем, что это Excel, а не другой COM-объект
+            try:
+                _ = disp.Name  # есть у Application
+                ver = disp.Version
+                log(f"ROT candidate: name={name!r} Version={ver}")
+                xl_obj = disp
+                break
+            except Exception:
+                pass
         except Exception:
-            continue
-        if wb_path == abs_path:
+            pass
+        moniker = monikers.Next()
+    return xl_obj
+
+
+def attach_workbook(path: str):
+    """Подключаемся к уже открытому Excel через ROT.
+    Никогда не создаём новый процесс."""
+    abs_path = os.path.abspath(path)
+
+    # Попытка 1: GetActiveObject
+    xl = None
+    try:
+        xl = win32.GetActiveObject("Excel.Application")
+        log("attach_workbook: GetActiveObject OK")
+    except Exception as e1:
+        log(f"attach_workbook: GetActiveObject failed ({e1}), trying ROT scan...")
+
+    # Попытка 2: скан ROT
+    if xl is None:
+        xl = _get_xl_app()
+        if xl:
+            log("attach_workbook: found Excel via ROT scan")
+
+    if xl is None:
+        raise RuntimeError(
+            "Excel не запущен или недоступен через COM.\n"
+            "Убедитесь, что breedingSync.xlsm открыт в Excel."
+        )
+
+    # Итерация Workbooks через индекс (Workbooks.Count + Workbooks(i))
+    try:
+        count = xl.Workbooks.Count
+    except Exception:
+        # dynamic COM fallback: обращаемся прямо через _oleobj_
+        count = xl._oleobj_.Invoke(0x59c, 0, pythoncom.DISPATCH_PROPERTYGET, True)
+        log(f"attach_workbook: Workbooks.Count via _oleobj_ = {count}")
+
+    log(f"attach_workbook: Workbooks.Count={count}")
+
+    for i in range(1, count + 1):
+        try:
+            wb = xl.Workbooks(i)
+            wb_full = os.path.abspath(wb.FullName)
+        except Exception:
+            try:
+                wb_raw = xl._oleobj_.Invoke(0x59c, 0, pythoncom.DISPATCH_PROPERTYGET, True)
+                wb = win32.Dispatch(wb_raw)
+                wb_full = os.path.abspath(wb.FullName)
+            except Exception:
+                continue
+        if wb_full == abs_path:
             log(f"attach_workbook: found '{wb.FullName}'")
             return wb, False, xl, count
+
     raise RuntimeError(
         f"Книга '{abs_path}' не найдена среди открытых в Excel.\n"
         "Откройте файл breedingSync.xlsm и повторите."
