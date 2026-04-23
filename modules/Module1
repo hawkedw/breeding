@@ -186,16 +186,16 @@ Private Function BuildSubmitJson(sh As Worksheet, outPath As String) As Boolean
                 valStr = CStr(cellVal)
             Else
                 ' Даты из Excel приходят как Double (serial)
-                valStr = "\"" & CStr(cellVal) & "\""
+                valStr = """" & CStr(cellVal) & """"
             End If
             If Not fFirst Then fieldsStr = fieldsStr & ","
-            fieldsStr = fieldsStr & "\"" & hdr & "\":" & valStr
+            fieldsStr = fieldsStr & """" & hdr & """:" & valStr
             fFirst = False
 NextCol:
         Next col
         fieldsStr = fieldsStr & "}"
 
-        rowItem = "{\"row\":" & r & ",\"GlobalID\":\"" & pgid & "\",\"fields\":" & fieldsStr & "}"
+        rowItem = "{""row"":" & r & ",""GlobalID"":""" & pgid & """,""fields"":" & fieldsStr & "}"
         If Not first Then rows = rows & ","
         rows = rows & rowItem
         first = False
@@ -237,14 +237,14 @@ Private Sub ApplySubmitResult(sh As Worksheet, resultPath As String)
     pos = 1
     Do
         Dim rPos As Long
-        rPos = InStr(pos, content, "\"row\"")
+        rPos = InStr(pos, content, """row""")
         If rPos = 0 Then Exit Do
         ' читаем номер строки
         Dim colonPos As Long: colonPos = InStr(rPos, content, ":")
         Dim commaPos As Long: commaPos = InStr(colonPos, content, ",")
         rowNum = CLng(Trim(Mid(content, colonPos + 1, commaPos - colonPos - 1)))
         ' читаем success
-        Dim sPos As Long: sPos = InStr(commaPos, content, "\"success\"")
+        Dim sPos As Long: sPos = InStr(commaPos, content, """success""")
         Dim sColon As Long: sColon = InStr(sPos, content, ":")
         Dim sEnd As Long: sEnd = InStr(sColon, content, ",")
         If sEnd = 0 Then sEnd = InStr(sColon, content, "}")
