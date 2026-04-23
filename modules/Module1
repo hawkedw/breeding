@@ -1,0 +1,72 @@
+' Module1 — BreedingButtons
+
+Sub ImportRegistry()
+    Dim pyPath  As String
+    Dim wbPath  As String
+    Dim logPath As String
+    Dim exitCode As Long
+    
+    pyPath = ThisWorkbook.Path & "\breedingSync.py"
+    wbPath = ThisWorkbook.FullName
+    logPath = ThisWorkbook.Path & "\breedingSync.log"
+    
+    ' Ïðîâåðêà ÷òî ôàéë ñêðèïòà ñóùåñòâóåò
+    If Dir(pyPath) = "" Then
+        MsgBox "Íå íàéäåí ôàéë:" & vbCrLf & pyPath, vbCritical, "Îøèáêà"
+        Exit Sub
+    End If
+    
+    Application.StatusBar = "Âûïîëíÿåòñÿ èìïîðò Ðååñòðà îïûòîâ..."
+    
+    exitCode = RunPython(pyPath, "import_registry", wbPath)
+    
+    Application.StatusBar = False
+    
+    If exitCode = 0 Then
+        ' Ïåðå÷èòûâàåì êíèãó — python óæå çàïèñàë äàííûå
+        ThisWorkbook.Worksheets(1).Calculate
+        MsgBox "Èìïîðò çàâåðø¸í óñïåøíî.", vbInformation, "Èìïîðò Ðååñòð îïûòîâ"
+    Else
+        MsgBox "Ñêðèïò çàâåðøèëñÿ ñ îøèáêîé (êîä " & exitCode & ")." & vbCrLf & _
+               "Ïîäðîáíîñòè â: " & logPath, vbCritical, "Èìïîðò Ðååñòð îïûòîâ"
+    End If
+End Sub
+
+
+Sub SaveRegistry()
+    Dim pyPath  As String
+    Dim wbPath  As String
+    Dim logPath As String
+    Dim exitCode As Long
+    
+    pyPath = ThisWorkbook.Path & "\breedingSync.py"
+    wbPath = ThisWorkbook.FullName
+    logPath = ThisWorkbook.Path & "\breedingSync.log"
+    
+    If Dir(pyPath) = "" Then
+        MsgBox "Íå íàéäåí ôàéë:" & vbCrLf & pyPath, vbCritical, "Îøèáêà"
+        Exit Sub
+    End If
+    
+    ' Ïðåäóïðåæäåíèå ïåðåä îòïðàâêîé
+    Dim ans As Integer
+    ans = MsgBox("Îòïðàâèòü èçìåí¸ííûå ñòðîêè (Dirty=TRUE) â ArcGIS?", _
+                  vbQuestion + vbYesNo, "Ñîõðàíèòü Ðååñòð îïûòîâ")
+    If ans <> vbYes Then Exit Sub
+    
+    Application.StatusBar = "Âûïîëíÿåòñÿ ñîõðàíåíèå Ðååñòðà îïûòîâ..."
+    
+    exitCode = RunPython(pyPath, "submit_registry", wbPath)
+    
+    Application.StatusBar = False
+    
+    If exitCode = 0 Then
+        MsgBox "Ñîõðàíåíèå çàâåðøåíî óñïåøíî.", vbInformation, "Ñîõðàíèòü Ðååñòð îïûòîâ"
+    Else
+        MsgBox "Ñêðèïò çàâåðøèëñÿ ñ îøèáêîé (êîä " & exitCode & ")." & vbCrLf & _
+               "Ïîäðîáíîñòè â: " & logPath, vbCritical, "Ñîõðàíèòü Ðååñòð îïûòîâ"
+    End If
+End Sub
+
+
+
