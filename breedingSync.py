@@ -262,8 +262,13 @@ def submit_registry():
         log(f"ERROR: {TEMP_SUBMIT_PATH} not found")
         return 1
 
-    with open(TEMP_SUBMIT_PATH, encoding="utf-8") as f:
-        payload_rows = json.load(f)
+    # VBA Print # writes in system ANSI (cp1251 on Russian Windows)
+    raw = open(TEMP_SUBMIT_PATH, "rb").read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1251")
+    payload_rows = json.loads(text)
 
     log(f"Loaded {len(payload_rows)} dirty rows from JSON")
 
