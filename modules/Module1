@@ -1,72 +1,282 @@
 ' Module1 — BreedingButtons
+Option Explicit
+
+Private Const TEMP_IMPORT As String = "_temp_import.xlsx"
+Private Const TEMP_SUBMIT As String = "_temp_submit.json"
+Private Const TEMP_RESULT As String = "_temp_submit_result.json"
+Private Const SHEET_REG   As String = "Реестр опытов"
+Private Const DIRTY_COL   As Long   = 29
+Private Const PGID_COL    As Long   = 30
+Private Const TOTAL_COLS  As Long   = 31
+
 
 Sub ImportRegistry()
-    Dim pyPath  As String
-    Dim wbPath  As String
-    Dim logPath As String
     Dim exitCode As Long
-    
-    pyPath = ThisWorkbook.Path & "\breedingSync.py"
-    wbPath = ThisWorkbook.FullName
-    logPath = ThisWorkbook.Path & "\breedingSync.log"
-    
-    ' Ïðîâåðêà ÷òî ôàéë ñêðèïòà ñóùåñòâóåò
-    If Dir(pyPath) = "" Then
-        MsgBox "Íå íàéäåí ôàéë:" & vbCrLf & pyPath, vbCritical, "Îøèáêà"
+    Dim tempPath As String
+    tempPath = ThisWorkbook.Path & "\" & TEMP_IMPORT
+
+    ' Удаляем старый временный файл
+    If Dir(tempPath) <> "" Then Kill tempPath
+
+    Application.StatusBar = "Выполняется импорт..."
+    exitCode = RunPython("import_registry")
+    Application.StatusBar = False
+
+    If exitCode <> 0 Then
+        MsgBox "Скрипт завершился с ошибкой (" & exitCode & ")." & vbCrLf & _
+               "Подробности: " & ThisWorkbook.Path & "\breedingSync.log", _
+               vbCritical, "Импорт"
         Exit Sub
     End If
-    
-    Application.StatusBar = "Âûïîëíÿåòñÿ èìïîðò Ðååñòðà îïûòîâ..."
-    
-    exitCode = RunPython(pyPath, "import_registry", wbPath)
-    
-    Application.StatusBar = False
-    
-    If exitCode = 0 Then
-        ' Ïåðå÷èòûâàåì êíèãó — python óæå çàïèñàë äàííûå
-        ThisWorkbook.Worksheets(1).Calculate
-        MsgBox "Èìïîðò çàâåðø¸í óñïåøíî.", vbInformation, "Èìïîðò Ðååñòð îïûòîâ"
-    Else
-        MsgBox "Ñêðèïò çàâåðøèëñÿ ñ îøèáêîé (êîä " & exitCode & ")." & vbCrLf & _
-               "Ïîäðîáíîñòè â: " & logPath, vbCritical, "Èìïîðò Ðååñòð îïûòîâ"
+
+    ' Ждём появления temp файла (30 сек макс)
+    If Not WaitForFile(tempPath, 30) Then
+        MsgBox "Файл " & TEMP_IMPORT & " не появился. См. лог.", vbCritical, "Импорт"
+        Exit Sub
     End If
+
+    PasteImportData tempPath
+End Sub
+
+
+Private Sub PasteImportData(tempPath As String)
+    Dim srcWb  As Workbook
+    Dim srcSh  As Worksheet
+    Dim dstSh  As Worksheet
+    Dim lastRow As Long, lastCol As Long
+
+    Application.ScreenUpdating = False
+    Application.EnableEvents   = False
+
+    Set srcWb = Workbooks.Open(tempPath, ReadOnly:=True)
+    Set srcSh = srcWb.Worksheets(1)
+
+    ' Получаем или создаём лист в целевой книге
+    On Error Resume Next
+    Set dstSh = ThisWorkbook.Worksheets(SHEET_REG)
+    On Error GoTo 0
+    If dstSh Is Nothing Then
+        Set dstSh = ThisWorkbook.Worksheets.Add
+        dstSh.Name = SHEET_REG
+    End If
+
+    ' Снимаем фильтр, отображаем все строки/столбцы
+    On Error Resume Next
+    dstSh.AutoFilterMode = False
+    dstSh.Cells.EntireRow.Hidden    = False
+    dstSh.Cells.EntireColumn.Hidden = False
+    On Error GoTo 0
+
+    ' Очищаем старые данные
+    lastRow = dstSh.Cells(dstSh.Rows.Count, 1).End(-4162).Row
+    If lastRow >= 1 Then dstSh.Cells.ClearContents
+
+    ' Копируем всё из temp книги (значениями, не формулами)
+    lastRow = srcSh.Cells(srcSh.Rows.Count, 1).End(-4162).Row
+    lastCol = srcSh.Cells(1, srcSh.Columns.Count).End(-4159).Column
+    If lastRow >= 1 And lastCol >= 1 Then
+        dstSh.Range(dstSh.Cells(1, 1), dstSh.Cells(lastRow, lastCol)).Value = _
+            srcSh.Range(srcSh.Cells(1, 1), srcSh.Cells(lastRow, lastCol)).Value
+    End If
+
+    srcWb.Close SaveChanges:=False
+    Kill tempPath
+
+    ' Автофильтр + закрепить строку
+    lastRow = dstSh.Cells(dstSh.Rows.Count, 1).End(-4162).Row
+    If lastRow >= 2 Then
+        dstSh.Range(dstSh.Cells(1, 1), dstSh.Cells(lastRow, TOTAL_COLS)).AutoFilter
+    End If
+    dstSh.Activate
+    ActiveWindow.FreezePanes = False
+    ActiveWindow.SplitRow    = 1
+    ActiveWindow.SplitColumn = 0
+    ActiveWindow.FreezePanes = True
+
+    Application.ScreenUpdating = True
+    Application.EnableEvents   = True
+
+    ThisWorkbook.Save
+    MsgBox "Импорт завершён. Строк: " & lastRow - 1, vbInformation, "Импорт Реестр опытов"
 End Sub
 
 
 Sub SaveRegistry()
-    Dim pyPath  As String
-    Dim wbPath  As String
-    Dim logPath As String
-    Dim exitCode As Long
-    
-    pyPath = ThisWorkbook.Path & "\breedingSync.py"
-    wbPath = ThisWorkbook.FullName
-    logPath = ThisWorkbook.Path & "\breedingSync.log"
-    
-    If Dir(pyPath) = "" Then
-        MsgBox "Íå íàéäåí ôàéë:" & vbCrLf & pyPath, vbCritical, "Îøèáêà"
+    Dim ans As Integer
+    ans = MsgBox("Отправить изменённые строки (Dirty=TRUE) в ArcGIS?", _
+                  vbQuestion + vbYesNo, "Сохранить Реестр опытов")
+    If ans <> vbYes Then Exit Sub
+
+    Dim dstSh As Worksheet
+    On Error Resume Next
+    Set dstSh = ThisWorkbook.Worksheets(SHEET_REG)
+    On Error GoTo 0
+    If dstSh Is Nothing Then
+        MsgBox "Лист '" & SHEET_REG & "' не найден.", vbCritical
         Exit Sub
     End If
-    
-    ' Ïðåäóïðåæäåíèå ïåðåä îòïðàâêîé
-    Dim ans As Integer
-    ans = MsgBox("Îòïðàâèòü èçìåí¸ííûå ñòðîêè (Dirty=TRUE) â ArcGIS?", _
-                  vbQuestion + vbYesNo, "Ñîõðàíèòü Ðååñòð îïûòîâ")
-    If ans <> vbYes Then Exit Sub
-    
-    Application.StatusBar = "Âûïîëíÿåòñÿ ñîõðàíåíèå Ðååñòðà îïûòîâ..."
-    
-    exitCode = RunPython(pyPath, "submit_registry", wbPath)
-    
+
+    ' Сбираем dirty строки в JSON
+    Dim submitPath As String
+    submitPath = ThisWorkbook.Path & "\" & TEMP_SUBMIT
+    If Not BuildSubmitJson(dstSh, submitPath) Then Exit Sub
+
+    Dim resultPath As String
+    resultPath = ThisWorkbook.Path & "\" & TEMP_RESULT
+    If Dir(resultPath) <> "" Then Kill resultPath
+
+    Application.StatusBar = "Выполняется отправка..."
+    Dim exitCode As Long
+    exitCode = RunPython("submit_registry")
     Application.StatusBar = False
-    
-    If exitCode = 0 Then
-        MsgBox "Ñîõðàíåíèå çàâåðøåíî óñïåøíî.", vbInformation, "Ñîõðàíèòü Ðååñòð îïûòîâ"
-    Else
-        MsgBox "Ñêðèïò çàâåðøèëñÿ ñ îøèáêîé (êîä " & exitCode & ")." & vbCrLf & _
-               "Ïîäðîáíîñòè â: " & logPath, vbCritical, "Ñîõðàíèòü Ðååñòð îïûòîâ"
+
+    If exitCode <> 0 Then
+        MsgBox "Скрипт завершился с ошибкой (" & exitCode & ").", vbCritical, "Сохранение"
+        Exit Sub
     End If
+
+    If Not WaitForFile(resultPath, 60) Then
+        MsgBox "Файл результата не появился. См. лог.", vbCritical, "Сохранение"
+        Exit Sub
+    End If
+
+    ApplySubmitResult dstSh, resultPath
 End Sub
 
 
+Private Function BuildSubmitJson(sh As Worksheet, outPath As String) As Boolean
+    Dim lastRow As Long, r As Long
+    Dim dirtyVal As Variant, pgid As Variant
+    Dim rows As String, rowItem As String, fieldsStr As String
+    Dim col As Long, hdr As String, cellVal As Variant
+    Dim first As Boolean
 
+    ' Получаем заголовки
+    Dim headers(1 To TOTAL_COLS) As String
+    For col = 1 To TOTAL_COLS
+        headers(col) = CStr(sh.Cells(1, col).Value)
+    Next col
+
+    lastRow = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
+    If lastRow < 2 Then
+        MsgBox "Нет данных для отправки.", vbInformation
+        BuildSubmitJson = False
+        Exit Function
+    End If
+
+    rows = "["
+    first = True
+    For r = 2 To lastRow
+        dirtyVal = sh.Cells(r, DIRTY_COL).Value
+        If dirtyVal <> True Then GoTo NextRow
+        pgid = sh.Cells(r, PGID_COL).Value
+        If pgid = "" Or IsNull(pgid) Or IsEmpty(pgid) Then GoTo NextRow
+
+        ' Строим fields JSON
+        fieldsStr = "{"
+        Dim fFirst As Boolean: fFirst = True
+        For col = 3 To 18  ' EDITABLE_COLS
+            hdr = headers(col)
+            If hdr = "" Or hdr = "Dirty" Then GoTo NextCol
+            cellVal = sh.Cells(r, col).Value
+            Dim valStr As String
+            If IsEmpty(cellVal) Or IsNull(cellVal) Or cellVal = "" Then
+                valStr = "null"
+            ElseIf IsNumeric(cellVal) Then
+                valStr = CStr(cellVal)
+            Else
+                ' Даты из Excel приходят как Double (serial)
+                valStr = "\"" & CStr(cellVal) & "\""
+            End If
+            If Not fFirst Then fieldsStr = fieldsStr & ","
+            fieldsStr = fieldsStr & "\"" & hdr & "\":" & valStr
+            fFirst = False
+NextCol:
+        Next col
+        fieldsStr = fieldsStr & "}"
+
+        rowItem = "{\"row\":" & r & ",\"GlobalID\":\"" & pgid & "\",\"fields\":" & fieldsStr & "}"
+        If Not first Then rows = rows & ","
+        rows = rows & rowItem
+        first = False
+NextRow:
+    Next r
+    rows = rows & "]"
+
+    If first Then
+        MsgBox "Нет изменённых строк (Dirty=TRUE).", vbInformation
+        BuildSubmitJson = False
+        Exit Function
+    End If
+
+    ' Записываем JSON
+    Dim fNum As Integer
+    fNum = FreeFile
+    Open outPath For Output As #fNum
+    Print #fNum, rows
+    Close #fNum
+
+    BuildSubmitJson = True
+End Function
+
+
+Private Sub ApplySubmitResult(sh As Worksheet, resultPath As String)
+    Dim fNum As Integer, content As String, line As String
+    fNum = FreeFile
+    Open resultPath For Input As #fNum
+    Do While Not EOF(fNum)
+        Line Input #fNum, line
+        content = content & line
+    Loop
+    Close #fNum
+
+    ' Простой парсер: ищем "row":N,"success":true/false
+    Dim successCount As Long, failCount As Long
+    successCount = 0: failCount = 0
+    Dim pos As Long, rowStr As String, rowNum As Long
+    pos = 1
+    Do
+        Dim rPos As Long
+        rPos = InStr(pos, content, "\"row\"")
+        If rPos = 0 Then Exit Do
+        ' читаем номер строки
+        Dim colonPos As Long: colonPos = InStr(rPos, content, ":")
+        Dim commaPos As Long: commaPos = InStr(colonPos, content, ",")
+        rowNum = CLng(Trim(Mid(content, colonPos + 1, commaPos - colonPos - 1)))
+        ' читаем success
+        Dim sPos As Long: sPos = InStr(commaPos, content, "\"success\"")
+        Dim sColon As Long: sColon = InStr(sPos, content, ":")
+        Dim sEnd As Long: sEnd = InStr(sColon, content, ",")
+        If sEnd = 0 Then sEnd = InStr(sColon, content, "}")
+        Dim successVal As String
+        successVal = Trim(Mid(content, sColon + 1, sEnd - sColon - 1))
+        If successVal = "true" Then
+            sh.Cells(rowNum, DIRTY_COL).Value = False
+            successCount = successCount + 1
+        Else
+            failCount = failCount + 1
+        End If
+        pos = sEnd + 1
+    Loop
+
+    Kill resultPath
+    ThisWorkbook.Save
+    MsgBox "Отправлено: " & successCount & ", ошибок: " & failCount, _
+           IIf(failCount > 0, vbExclamation, vbInformation), "Сохранить Реестр опытов"
+End Sub
+
+
+Private Function WaitForFile(path As String, timeoutSec As Long) As Boolean
+    Dim t As Single
+    t = Timer
+    Do While Dir(path) = ""
+        If Timer - t > timeoutSec Then
+            WaitForFile = False
+            Exit Function
+        End If
+        Application.Wait Now + TimeSerial(0, 0, 1)
+    Loop
+    ' Доп ждём 1 сек чтоб файл записался целиком
+    Application.Wait Now + TimeSerial(0, 0, 1)
+    WaitForFile = True
+End Function

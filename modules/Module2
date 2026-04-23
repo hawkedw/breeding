@@ -1,18 +1,23 @@
+' Module2 — RunPython helper
+Option Explicit
 
-Function RunPython(pyScript As String, action As String, wbPath As String) As Long
+Function RunPython(action As String) As Long
+    Dim wsh As Object
+    Dim py As String, script As String, logPath As String
     Dim cmd As String
-    Dim logPath As String
 
-    logPath = Left(wbPath, InStrRev(wbPath, "\")) & "breedingSync.log"
+    py      = "C:\Python311\python.exe"
+    script  = ThisWorkbook.Path & "\breedingSync.py"
+    logPath = ThisWorkbook.Path & "\breedingSync.log"
+
+    Set wsh = CreateObject("WScript.Shell")
 
     cmd = "cmd.exe /c " & Chr(34) & _
-          Chr(34) & "C:\Python311\python.exe" & Chr(34) & " " & _
-          Chr(34) & pyScript & Chr(34) & " " & action & " " & _
-          Chr(34) & wbPath & Chr(34) & _
+          Chr(34) & py & Chr(34) & " " & _
+          Chr(34) & script & Chr(34) & " " & action & _
           " 1>>" & Chr(34) & logPath & Chr(34) & _
           " 2>&1" & Chr(34)
 
-    Shell cmd, vbHide
-
-    RunPython = 0
+    ' True = ждём завершения. Excel не обращается из Python, поэтому блокировка безопасна
+    RunPython = wsh.Run(cmd, 0, True)
 End Function
