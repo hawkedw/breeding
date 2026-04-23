@@ -76,6 +76,10 @@ EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
+# alias -> field name mapping (built once from FIELDS_PARENT)
+ALIAS_TO_NAME = {f["alias"]: f["n"] for f in FIELDS_PARENT}
+ALIAS_TO_NAME[CUSTOMER_ALIAS] = CUSTOMER_FIELD
+
 # ---------- AUTH ----------
 
 TOKEN_URL        = "https://maps.ekoniva-apk.org/portal/sharing/rest/generateToken"
@@ -262,14 +266,19 @@ def submit_registry():
         log(f"ERROR: {TEMP_SUBMIT_PATH} not found")
         return 1
 
-    # VBA Print # writes in system ANSI (cp1251 on Russian Windows)
+    # VBA writes in system ANSI (cp1251 on Russian Windows)
+    # decode cp1251 bytes -> latin-1 string -> encode back -> decode as cp1251
     raw = open(TEMP_SUBMIT_PATH, "rb").read()
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        text = raw.decode("cp1251")
-    payload_rows = json.loads(text)
+    for enc in ("utf-8-sig", "utf-8", "cp1251"):
+        try:
+            text = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, ValueError):
+            continue
+    else:
+        text = raw.decode("cp1251", errors="replace")
 
+    payload_rows = json.loads(text)
     log(f"Loaded {len(payload_rows)} dirty rows from JSON")
 
     if not payload_rows:
@@ -290,14 +299,18 @@ def submit_registry():
             continue
 
         attrs = {"GlobalID": str(parent_gid).strip()}
-        for field_name, raw_val in item.get("fields", {}).items():
+        for key, raw_val in item.get("fields", {}).items():
+            # resolve alias -> field name if needed
+            field_name = ALIAS_TO_NAME.get(key, key)
             if field_name.lower() in SYS_SKIP:
                 continue
             f_type = name_to_type.get(field_name)
+            if f_type is None:
+                log(f"Row {row_idx}: unknown field/alias {key!r}, skip")
+                continue
             if raw_val in ("", None):
                 attrs[field_name] = None
             elif f_type == "DATE":
-                # VBA sends date as Excel serial float string
                 try:
                     attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(raw_val)))
                 except Exception:
@@ -308,6 +321,7 @@ def submit_registry():
         edits.append({"attributes": attrs, "row": row_idx})
 
     log(f"Sending {len(edits)} updates...")
+    log(f"attrs sample: {json.dumps(edits[0]['attributes'] if edits else {}, ensure_ascii=False)}")
     feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
     resp = requests.post(URL_PARENT + "/applyEdits", data={
         "f": "json", "token": token,
