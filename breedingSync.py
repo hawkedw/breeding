@@ -1,5 +1,5 @@
 # breedingSync.py
-# import_registry -> writes _temp_import.xlsx
+# import_registry -> writes _temp_import.xlsx via win32com (like milkQuality_Forms example)
 # submit_registry -> reads dirty rows directly from workbook via win32com, sends to ArcGIS
 
 import sys, os, json, datetime
@@ -114,16 +114,24 @@ def esri_ms_to_dt(ms):
     """ESRI UTC ms -> local datetime (+3h)."""
     return EPOCH + datetime.timedelta(milliseconds=int(ms)) + OFFSET
 
-def esri_ms_to_date(ms):
-    """ESRI UTC ms -> datetime.date (no timezone shift)."""
-    return (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
+def dt_to_excel_serial(dt: datetime.datetime) -> float:
+    """datetime -> Excel serial (float), COM не делает tz-конвертацию."""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    delta = dt - EXCEL_EPOCH
+    return delta.days + (delta.seconds + delta.microseconds / 1_000_000) / 86400.0
 
-def esri_ms_to_dt_date_only(ms):
-    """ESRI UTC ms -> datetime.datetime midnight (no tz shift).
-    openpyxl writes it as a real Excel date serial; number_format hides time.
+def arc_ms_to_excel_serial(ms, date_only=False) -> float:
+    """ArcGIS ms -> Excel serial.
+    date_only=True: без сдвига на UTC+3, чистая дата (midnight UTC).
+    date_only=False: сдвиг +3h, дата+время.
     """
-    d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
-    return datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+    if date_only:
+        d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
+        dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+    else:
+        dt = esri_ms_to_dt(int(ms))
+    return dt_to_excel_serial(dt)
 
 def dt_to_esri(dt):
     if dt.tzinfo is not None:
@@ -133,21 +141,11 @@ def dt_to_esri(dt):
     return int((dt - EPOCH).total_seconds() * 1000)
 
 def date_to_esri(d):
-    """datetime.date -> ESRI ms (UTC midnight)."""
     dt = datetime.datetime(d.year, d.month, d.day)
     return int((dt - EPOCH).total_seconds() * 1000)
 
 def excel_serial_to_dt(x):
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
-
-def arc_value_to_cell(v, date_only=False):
-    """Convert ArcGIS ms -> value for Excel cell.
-    date_only=True  -> returns datetime.date  (openpyxl stores without time)
-    date_only=False -> returns datetime.datetime (+3h local)
-    """
-    if date_only:
-        return esri_ms_to_date(int(float(v)))
-    return esri_ms_to_dt(int(float(v)))
 
 
 # ---------- QUERY LAYER ----------
@@ -174,15 +172,19 @@ def query_layer(url, where="1=1", order_by=""):
     return feats
 
 
-# ---------- IMPORT: write temp xlsx ----------
+# ---------- IMPORT: write temp xlsx via win32com ----------
+
+def _to_2d(rows):
+    return tuple(tuple(r) for r in rows)
+
 
 def import_registry():
     log("=== import_registry START ===")
 
     try:
-        import openpyxl
+        import win32com.client as win32
     except ImportError:
-        log("ERROR: openpyxl not installed. Run: pip install openpyxl")
+        log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
     parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
@@ -199,84 +201,112 @@ def import_registry():
         if pgid:
             child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
 
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = SHEET_REGISTRY
+    # Открываем Excel скрыто
+    excel = win32.Dispatch("Excel.Application")
+    excel.Visible = False
+    excel.DisplayAlerts = False
+    excel.ScreenUpdating = False
 
-    headers = [""] * TOTAL_COLS
-    for f in FIELDS_PARENT:
-        col = f.get("col")
-        if col:
-            headers[col - 1] = f["alias"]
-    for c in CUSTOMER_COLS:
-        headers[c - 1] = CUSTOMER_ALIAS
-    headers[DIRTY_COL - 1]      = DIRTY_ALIAS
-    headers[PARENT_GID_COL - 1] = "GlobalID"
-    headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
-    ws.append(headers)
+    abs_path = os.path.abspath(TEMP_IMPORT_PATH)
 
-    fmt_dt   = "DD.MM.YYYY HH:MM"
-    fmt_date = "DD.MM.YYYY"
+    # если файл уже есть — открываем его, иначе создаём новый
+    if os.path.exists(abs_path):
+        wb = excel.Workbooks.Open(abs_path)
+        try:
+            sh = wb.Worksheets(SHEET_REGISTRY)
+            sh.Cells.Clear()
+        except Exception:
+            wb.Close(SaveChanges=False)
+            os.remove(abs_path)
+            wb = excel.Workbooks.Add()
+            sh = wb.Worksheets(1)
+            sh.Name = SHEET_REGISTRY
+    else:
+        wb = excel.Workbooks.Add()
+        sh = wb.Worksheets(1)
+        sh.Name = SHEET_REGISTRY
 
-    for ft in parent_feats:
-        attrs = ft.get("attributes", {})
-
-        ws.append([""] * TOTAL_COLS)
-        cur_row = ws.max_row
-
+    try:
+        # --- Шапка ---
+        headers = [""] * TOTAL_COLS
         for f in FIELDS_PARENT:
             col = f.get("col")
-            if not col:
-                continue
-            v = attrs.get(f["n"])
-            if v is None:
-                continue
+            if col:
+                headers[col - 1] = f["alias"]
+        for c in CUSTOMER_COLS:
+            headers[c - 1] = CUSTOMER_ALIAS
+        headers[DIRTY_COL - 1]      = DIRTY_ALIAS
+        headers[PARENT_GID_COL - 1] = "GlobalID"
+        headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
+        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
 
-            cell = ws.cell(row=cur_row, column=col)
-            if f["type"] == "DATE" and isinstance(v, (int, float)):
-                if f["n"] in DATE_ONLY_FIELDS:
-                    cell.value = esri_ms_to_dt_date_only(v)
-                    cell.number_format = fmt_date
+        # --- Данные ---
+        data = []
+        for ft in parent_feats:
+            attrs = ft.get("attributes", {})
+            row = [""] * TOTAL_COLS
+
+            for f in FIELDS_PARENT:
+                col = f.get("col")
+                if not col:
+                    continue
+                v = attrs.get(f["n"])
+                if v is None:
+                    continue
+                if f["type"] == "DATE" and isinstance(v, (int, float)):
+                    row[col - 1] = arc_ms_to_excel_serial(v, date_only=(f["n"] in DATE_ONLY_FIELDS))
                 else:
-                    cell.value = esri_ms_to_dt(v)
-                    cell.number_format = fmt_dt
-            else:
-                cell.value = v
+                    row[col - 1] = v
 
-        parent_gid = attrs.get("GlobalID", "")
-        customers  = child_index.get(parent_gid, [])
-        child_gid  = ""
-        if customers:
-            for cf in child_feats:
-                if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
-                    child_gid = cf.get("attributes", {}).get("GlobalID", "")
-                    break
+            parent_gid = attrs.get("GlobalID", "")
+            customers  = child_index.get(parent_gid, [])
+            child_gid  = ""
+            if customers:
+                for cf in child_feats:
+                    if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
+                        child_gid = cf.get("attributes", {}).get("GlobalID", "")
+                        break
+            for i, c in enumerate(CUSTOMER_COLS):
+                if i < len(customers):
+                    row[c - 1] = customers[i] if customers[i] is not None else ""
 
-        for i, c in enumerate(CUSTOMER_COLS):
-            if i < len(customers):
-                ws.cell(row=cur_row, column=c).value = customers[i] if customers[i] is not None else ""
+            row[DIRTY_COL - 1]      = False
+            row[PARENT_GID_COL - 1] = parent_gid
+            row[CHILD_GID_COL - 1]  = child_gid
+            data.append(row)
 
-        ws.cell(row=cur_row, column=DIRTY_COL).value      = False
-        ws.cell(row=cur_row, column=PARENT_GID_COL).value = parent_gid
-        ws.cell(row=cur_row, column=CHILD_GID_COL).value  = child_gid
+        if data:
+            data_rng = sh.Range(sh.Cells(2, 1), sh.Cells(1 + len(data), TOTAL_COLS))
+            data_rng.Value = _to_2d(data)
 
-    if os.path.exists(TEMP_IMPORT_PATH):
-        os.remove(TEMP_IMPORT_PATH)
-    wb.save(TEMP_IMPORT_PATH)
-    log(f"import_registry complete: {ws.max_row - 1} rows -> {TEMP_IMPORT_PATH}")
-    return 0
+            # --- Форматы дат ---
+            for f in FIELDS_PARENT:
+                col = f.get("col")
+                if not col or f["type"] != "DATE":
+                    continue
+                fmt = "dd.mm.yyyy" if f["n"] in DATE_ONLY_FIELDS else "dd.mm.yyyy hh:mm"
+                rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col))
+                rng.NumberFormat = fmt
+
+        wb.SaveAs(abs_path, 51)  # 51 = xlOpenXMLWorkbook (.xlsx)
+        log(f"import_registry complete: {len(data)} rows -> {abs_path}")
+        return 0
+
+    finally:
+        try:
+            wb.Close(SaveChanges=False)
+        except Exception:
+            pass
+        try:
+            excel.Quit()
+        except Exception:
+            pass
+        excel.ScreenUpdating = True
 
 
 # ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
 
 def _attach_workbook(wb_path: str):
-    """Return (xl, wb, opened_here=False).
-    Attaches to the already-open Excel instance that called this script via VBA.
-    Match order:
-      1. exact case-insensitive full path
-      2. fallback: match by filename only (handles different drive/folder layouts)
-    Never calls Workbooks.Open.
-    """
     import win32com.client as win32
 
     try:
