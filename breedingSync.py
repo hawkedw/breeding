@@ -255,41 +255,55 @@ def import_registry():
 
 def _attach_workbook(abs_path: str):
     """Return (xl, wb, opened_here).
-    Tries GetActiveObject first (attach to already-open Excel).
-    Falls back to Dispatch+Open if Excel is not running.
+    Attaches to the already-open Excel instance that called this script via VBA.
+    Matches the workbook by case-insensitive full path comparison.
+    Never calls Workbooks.Open — the file must already be open.
     """
     import win32com.client as win32
-    import win32com.client.dynamic
-    import pythoncom
 
     xl = None
     try:
         xl = win32.GetActiveObject("Excel.Application")
         log("Attached to running Excel via GetActiveObject")
     except Exception as e:
-        log(f"GetActiveObject failed ({e}), launching new Excel")
-        xl = win32.Dispatch("Excel.Application")
+        log(f"GetActiveObject failed: {e}")
+        raise RuntimeError(
+            "Cannot attach to Excel. Make sure the workbook is open and the macro is running."
+        ) from e
 
-    # search for already-open workbook
+    target = abs_path.lower()
     wb = None
     try:
         for book in xl.Workbooks:
             try:
-                if os.path.abspath(book.FullName) == abs_path:
+                full = book.FullName.lower()
+                log(f"  checking open workbook: {book.FullName}")
+                if full == target:
                     wb = book
                     break
             except Exception:
                 continue
     except Exception as e:
-        log(f"Workbooks iteration warning: {e}")
+        log(f"Workbooks iteration error: {e}")
+        raise
 
-    if wb is not None:
-        log(f"Found open workbook: {wb.FullName}")
-        return xl, wb, False
+    if wb is None:
+        # list what is open to help diagnose
+        names = []
+        try:
+            for book in xl.Workbooks:
+                names.append(book.FullName)
+        except Exception:
+            pass
+        log(f"Open workbooks: {names}")
+        raise RuntimeError(
+            f"Workbook not found in open Excel instance.\n"
+            f"Expected: {abs_path}\n"
+            f"Open: {names}"
+        )
 
-    log(f"Opening workbook: {abs_path}")
-    wb = xl.Workbooks.Open(abs_path)
-    return xl, wb, True
+    log(f"Found open workbook: {wb.FullName}")
+    return xl, wb, False
 
 
 def submit_registry(wb_path: str):
