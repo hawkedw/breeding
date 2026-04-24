@@ -253,6 +253,45 @@ def import_registry():
 
 # ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
 
+def _attach_workbook(abs_path: str):
+    """Return (xl, wb, opened_here).
+    Tries GetActiveObject first (attach to already-open Excel).
+    Falls back to Dispatch+Open if Excel is not running.
+    """
+    import win32com.client as win32
+    import win32com.client.dynamic
+    import pythoncom
+
+    xl = None
+    try:
+        xl = win32.GetActiveObject("Excel.Application")
+        log("Attached to running Excel via GetActiveObject")
+    except Exception as e:
+        log(f"GetActiveObject failed ({e}), launching new Excel")
+        xl = win32.Dispatch("Excel.Application")
+
+    # search for already-open workbook
+    wb = None
+    try:
+        for book in xl.Workbooks:
+            try:
+                if os.path.abspath(book.FullName) == abs_path:
+                    wb = book
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        log(f"Workbooks iteration warning: {e}")
+
+    if wb is not None:
+        log(f"Found open workbook: {wb.FullName}")
+        return xl, wb, False
+
+    log(f"Opening workbook: {abs_path}")
+    wb = xl.Workbooks.Open(abs_path)
+    return xl, wb, True
+
+
 def submit_registry(wb_path: str):
     log("=== submit_registry START ===")
 
@@ -262,18 +301,8 @@ def submit_registry(wb_path: str):
         log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
-    # attach to already-open workbook or open it
-    xl = win32.Dispatch("Excel.Application")
     abs_path = os.path.abspath(wb_path)
-    wb = None
-    opened_here = False
-    for book in xl.Workbooks:
-        if os.path.abspath(book.FullName) == abs_path:
-            wb = book
-            break
-    if wb is None:
-        wb = xl.Workbooks.Open(abs_path)
-        opened_here = True
+    xl, wb, opened_here = _attach_workbook(abs_path)
 
     try:
         try:
@@ -287,7 +316,6 @@ def submit_registry(wb_path: str):
 
         if last_row < 2:
             log("No data rows")
-            _write_result([])
             return 0
 
         hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
@@ -308,7 +336,6 @@ def submit_registry(wb_path: str):
             log("ERROR: 'GlobalID' column not found")
             return 1
 
-        # extend last_row by dirty/gid columns to avoid short-range cuts
         last_row = max(
             last_row,
             sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
@@ -318,14 +345,13 @@ def submit_registry(wb_path: str):
         data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
         if not data:
             log("No data")
-            _write_result([])
             return 0
 
         name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
 
-        token    = get_token()
-        edits    = []
-        row_map  = []  # (excel_row, dirty_col) for marking success
+        token   = get_token()
+        edits   = []
+        row_map = []
 
         for r_idx, row in enumerate(data, start=2):
             row = list(row)
@@ -382,7 +408,6 @@ def submit_registry(wb_path: str):
 
         if not edits:
             log("No dirty rows")
-            _write_result([])
             return 0
 
         log(f"attrs sample: {json.dumps(edits[0]['attributes'], ensure_ascii=False)}")
@@ -396,25 +421,21 @@ def submit_registry(wb_path: str):
         js = resp.json()
         log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
 
-        results = []
         if "error" in js:
             log(f"applyEdits error: {js['error']}")
-            results = [{"row": rm[0], "success": False, "error": str(js["error"])}
-                       for rm in row_map]
-        else:
-            for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
-                ok = bool(r.get("success"))
-                err_msg = r.get("error", {}).get("description", "")
-                results.append({"row": excel_row, "success": ok, "error": err_msg})
-                if ok:
-                    sh.Cells(excel_row, d_col).Value = False
-                    log(f"Row {excel_row}: OK")
-                else:
-                    log(f"Row {excel_row}: FAILED - {err_msg}")
+            return 1
+
+        for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
+            ok = bool(r.get("success"))
+            err_msg = r.get("error", {}).get("description", "")
+            if ok:
+                sh.Cells(excel_row, d_col).Value = False
+                log(f"Row {excel_row}: OK")
+            else:
+                log(f"Row {excel_row}: FAILED - {err_msg}")
 
         wb.Save()
-        _write_result(results)
-        log(f"submit_registry complete -> {TEMP_RESULT_PATH}")
+        log("submit_registry complete")
         return 0
 
     finally:
@@ -423,11 +444,6 @@ def submit_registry(wb_path: str):
                 wb.Close(SaveChanges=True)
             except Exception:
                 pass
-
-
-def _write_result(results):
-    with open(TEMP_RESULT_PATH, "w", encoding="utf-8") as f:
-        json.dump({"status": "ok", "results": results}, f, ensure_ascii=False)
 
 
 # ---------- MAIN ----------
