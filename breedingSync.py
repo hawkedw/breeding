@@ -1,6 +1,6 @@
 # breedingSync.py
 # import_registry -> writes _temp_import.xlsx
-# submit_registry -> reads _temp_submit.json, sends to ArcGIS, writes _temp_submit_result.json
+# submit_registry -> reads dirty rows directly from workbook via win32com, sends to ArcGIS
 
 import sys, os, json, datetime
 import requests
@@ -10,10 +10,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH         = os.path.join(BASE_DIR, "breedingSync.log")
 TEMP_IMPORT_PATH = os.path.join(BASE_DIR, "_temp_import.xlsx")
-TEMP_SUBMIT_PATH = os.path.join(BASE_DIR, "_temp_submit.json")
 TEMP_RESULT_PATH = os.path.join(BASE_DIR, "_temp_submit_result.json")
 
 
@@ -76,7 +75,6 @@ EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
-# alias -> field name mapping (built once from FIELDS_PARENT)
 ALIAS_TO_NAME = {f["alias"]: f["n"] for f in FIELDS_PARENT}
 ALIAS_TO_NAME[CUSTOMER_ALIAS] = CUSTOMER_FIELD
 
@@ -132,7 +130,6 @@ def excel_serial_to_dt(x):
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
 
 def arc_value_to_dt(v):
-    """ArcGIS ms timestamp -> datetime (local +3)"""
     return esri_ms_to_dt(int(float(v)))
 
 
@@ -167,7 +164,6 @@ def import_registry():
 
     try:
         import openpyxl
-        from openpyxl.styles import numbers as xl_numbers
     except ImportError:
         log("ERROR: openpyxl not installed. Run: pip install openpyxl")
         return 1
@@ -190,7 +186,6 @@ def import_registry():
     ws = wb.active
     ws.title = SHEET_REGISTRY
 
-    # headers
     headers = [""] * TOTAL_COLS
     for f in FIELDS_PARENT:
         col = f.get("col")
@@ -239,7 +234,6 @@ def import_registry():
         row[CHILD_GID_COL - 1]  = child_gid
         ws.append(row)
 
-    # apply date formats
     for f in FIELDS_PARENT:
         col = f.get("col")
         if not col or f["type"] != "DATE":
@@ -257,95 +251,183 @@ def import_registry():
     return 0
 
 
-# ---------- SUBMIT: read json, send to ArcGIS, write result ----------
+# ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
 
-def submit_registry():
+def submit_registry(wb_path: str):
     log("=== submit_registry START ===")
 
-    if not os.path.exists(TEMP_SUBMIT_PATH):
-        log(f"ERROR: {TEMP_SUBMIT_PATH} not found")
+    try:
+        import win32com.client as win32
+    except ImportError:
+        log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
-    # VBA writes in system ANSI (cp1251 on Russian Windows)
-    # decode cp1251 bytes -> latin-1 string -> encode back -> decode as cp1251
-    raw = open(TEMP_SUBMIT_PATH, "rb").read()
-    for enc in ("utf-8-sig", "utf-8", "cp1251"):
-        try:
-            text = raw.decode(enc)
+    # attach to already-open workbook or open it
+    xl = win32.Dispatch("Excel.Application")
+    abs_path = os.path.abspath(wb_path)
+    wb = None
+    opened_here = False
+    for book in xl.Workbooks:
+        if os.path.abspath(book.FullName) == abs_path:
+            wb = book
             break
-        except (UnicodeDecodeError, ValueError):
-            continue
-    else:
-        text = raw.decode("cp1251", errors="replace")
+    if wb is None:
+        wb = xl.Workbooks.Open(abs_path)
+        opened_here = True
 
-    payload_rows = json.loads(text)
-    log(f"Loaded {len(payload_rows)} dirty rows from JSON")
+    try:
+        try:
+            sh = wb.Worksheets(SHEET_REGISTRY)
+        except Exception:
+            log(f"ERROR: sheet '{SHEET_REGISTRY}' not found in {wb_path}")
+            return 1
 
-    if not payload_rows:
-        log("No dirty rows")
-        with open(TEMP_RESULT_PATH, "w", encoding="utf-8") as f:
-            json.dump({"status": "ok", "results": []}, f)
+        last_col = sh.Cells(1, sh.Columns.Count).End(-4159).Column  # xlToLeft
+        last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row        # xlUp
+
+        if last_row < 2:
+            log("No data rows")
+            _write_result([])
+            return 0
+
+        hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
+
+        def col_idx(name):
+            for i, h in enumerate(hdr_vals):
+                if h == name:
+                    return i + 1
+            return 0
+
+        dirty_col = col_idx(DIRTY_ALIAS)
+        gid_col   = col_idx("GlobalID")
+
+        if not dirty_col:
+            log("ERROR: 'Dirty' column not found")
+            return 1
+        if not gid_col:
+            log("ERROR: 'GlobalID' column not found")
+            return 1
+
+        # extend last_row by dirty/gid columns to avoid short-range cuts
+        last_row = max(
+            last_row,
+            sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
+            sh.Cells(sh.Rows.Count, gid_col).End(-4162).Row,
+        )
+
+        data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
+        if not data:
+            log("No data")
+            _write_result([])
+            return 0
+
+        name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
+
+        token    = get_token()
+        edits    = []
+        row_map  = []  # (excel_row, dirty_col) for marking success
+
+        for r_idx, row in enumerate(data, start=2):
+            row = list(row)
+            dirty_val = row[dirty_col - 1]
+            if not dirty_val:
+                continue
+
+            parent_gid = row[gid_col - 1]
+            if not parent_gid:
+                log(f"Row {r_idx}: no GlobalID, skip")
+                continue
+
+            attrs = {"GlobalID": str(parent_gid).strip()}
+
+            for c_idx, alias in enumerate(hdr_vals, start=1):
+                if not alias or alias == DIRTY_ALIAS:
+                    continue
+                if alias in ("GlobalID", "ChildGlobalID"):
+                    continue
+
+                field_name = ALIAS_TO_NAME.get(alias, alias)
+                if field_name.lower() in SYS_SKIP:
+                    continue
+                f_type = name_to_type.get(field_name)
+                if f_type is None:
+                    continue
+
+                v = row[c_idx - 1]
+
+                if v in ("", None):
+                    attrs[field_name] = None
+                elif f_type == "DATE":
+                    if isinstance(v, datetime.datetime):
+                        attrs[field_name] = dt_to_esri(v)
+                    elif isinstance(v, (int, float)):
+                        attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(v)))
+                    else:
+                        try:
+                            attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(v)))
+                        except Exception:
+                            attrs[field_name] = None
+                elif f_type == "NUMBER":
+                    try:
+                        attrs[field_name] = float(v)
+                    except Exception:
+                        attrs[field_name] = None
+                else:
+                    attrs[field_name] = v
+
+            edits.append({"attributes": attrs})
+            row_map.append((r_idx, dirty_col))
+
+        log(f"Dirty rows found: {len(edits)}")
+
+        if not edits:
+            log("No dirty rows")
+            _write_result([])
+            return 0
+
+        log(f"attrs sample: {json.dumps(edits[0]['attributes'], ensure_ascii=False)}")
+
+        feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
+        resp = requests.post(URL_PARENT + "/applyEdits", data={
+            "f": "json", "token": token,
+            "rollbackOnFailure": "True", "useGlobalIds": "True",
+            "updates": feats_json,
+        }, timeout=60)
+        js = resp.json()
+        log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
+
+        results = []
+        if "error" in js:
+            log(f"applyEdits error: {js['error']}")
+            results = [{"row": rm[0], "success": False, "error": str(js["error"])}
+                       for rm in row_map]
+        else:
+            for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
+                ok = bool(r.get("success"))
+                err_msg = r.get("error", {}).get("description", "")
+                results.append({"row": excel_row, "success": ok, "error": err_msg})
+                if ok:
+                    sh.Cells(excel_row, d_col).Value = False
+                    log(f"Row {excel_row}: OK")
+                else:
+                    log(f"Row {excel_row}: FAILED - {err_msg}")
+
+        wb.Save()
+        _write_result(results)
+        log(f"submit_registry complete -> {TEMP_RESULT_PATH}")
         return 0
 
-    name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
+    finally:
+        if opened_here:
+            try:
+                wb.Close(SaveChanges=True)
+            except Exception:
+                pass
 
-    token = get_token()
-    edits = []
-    for item in payload_rows:
-        row_idx    = item["row"]
-        parent_gid = item.get("GlobalID", "")
-        if not parent_gid:
-            log(f"Row {row_idx}: no GlobalID, skip")
-            continue
 
-        attrs = {"GlobalID": str(parent_gid).strip()}
-        for key, raw_val in item.get("fields", {}).items():
-            # resolve alias -> field name if needed
-            field_name = ALIAS_TO_NAME.get(key, key)
-            if field_name.lower() in SYS_SKIP:
-                continue
-            f_type = name_to_type.get(field_name)
-            if f_type is None:
-                log(f"Row {row_idx}: unknown field/alias {key!r}, skip")
-                continue
-            if raw_val in ("", None):
-                attrs[field_name] = None
-            elif f_type == "DATE":
-                try:
-                    attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(raw_val)))
-                except Exception:
-                    attrs[field_name] = None
-            else:
-                attrs[field_name] = raw_val
-
-        edits.append({"attributes": attrs, "row": row_idx})
-
-    log(f"Sending {len(edits)} updates...")
-    log(f"attrs sample: {json.dumps(edits[0]['attributes'] if edits else {}, ensure_ascii=False)}")
-    feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
-    resp = requests.post(URL_PARENT + "/applyEdits", data={
-        "f": "json", "token": token,
-        "rollbackOnFailure": "True", "useGlobalIds": "True",
-        "updates": feats_json,
-    }, timeout=60)
-    js = resp.json()
-    log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
-
-    results = []
-    if "error" in js:
-        log(f"applyEdits error: {js['error']}")
-        results = [{"row": e["row"], "success": False, "error": str(js["error"])} for e in edits]
-    else:
-        for e, r in zip(edits, js.get("updateResults", [])):
-            results.append({"row": e["row"], "success": bool(r.get("success")),
-                            "error": r.get("error", {}).get("description", "")})
-            log(f"Row {e['row']}: {'OK' if r.get('success') else 'FAILED - ' + str(r.get('error', ''))}")
-
+def _write_result(results):
     with open(TEMP_RESULT_PATH, "w", encoding="utf-8") as f:
         json.dump({"status": "ok", "results": results}, f, ensure_ascii=False)
-
-    log(f"submit_registry complete -> {TEMP_RESULT_PATH}")
-    return 0
 
 
 # ---------- MAIN ----------
@@ -361,7 +443,7 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv
     if len(argv) < 2:
-        log("Usage: breedingSync.py <action>")
+        log("Usage: breedingSync.py <action> [workbook_path]")
         return 1
 
     action = normalize_action(argv[1])
@@ -369,15 +451,17 @@ def main(argv=None):
     log(f"action={action!r}")
     log(f"python={sys.executable}  cwd={os.getcwd()}")
 
-    action_map = {
-        "import_registry": import_registry,
-        "submit_registry": submit_registry,
-    }
-    fn = action_map.get(action)
-    if fn is None:
-        log(f"Unknown action: {action!r}. Available: {list(action_map)}")
-        return 1
-    return fn() or 0
+    if action == "import_registry":
+        return import_registry() or 0
+
+    if action == "submit_registry":
+        if len(argv) < 3:
+            log("ERROR: submit_registry requires workbook_path as 2nd argument")
+            return 1
+        return submit_registry(argv[2]) or 0
+
+    log(f"Unknown action: {action!r}. Available: import_registry, submit_registry")
+    return 1
 
 
 if __name__ == "__main__":
