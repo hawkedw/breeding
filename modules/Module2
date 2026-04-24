@@ -26,27 +26,66 @@ Function RunPython(action As String) As Long
 End Function
 
 
+' RunPythonWithWb — запускает Python АСИНХРОННО (False), чтобы Excel не блокировался.
+' Python подключается к книге через GetActiveObject пока Excel свободен.
+' Возвращает 0 всегда (exit code недоступен при async); ошибки — в лог.
 Function RunPythonWithWb(action As String) As Long
     Dim script  As String
     Dim wbPath  As String
     Dim logFile As String
     Dim cmd     As String
     Dim wsh     As Object
+    Dim pidFile As String
+    Dim waitSec As Long
+    Dim elapsed As Long
+    Dim fNum    As Integer
+    Dim pid     As Long
 
     script  = ThisWorkbook.Path & "\" & PY_SCRIPT
     wbPath  = ThisWorkbook.FullName
     logFile = ThisWorkbook.Path & "\breedingSync.log"
+    pidFile = ThisWorkbook.Path & "\_done.flag"
 
+    ' Удаляем старый флаг
+    On Error Resume Next
+    Kill pidFile
+    On Error GoTo 0
+
+    ' Оборачиваем команду: после Python создаём флаг завершения
     cmd = Chr(34) & PY_EXE & Chr(34) & " " & _
           Chr(34) & script & Chr(34) & " " & action & " " & _
           Chr(34) & wbPath & Chr(34) & _
-          " 1>>" & Chr(34) & logFile & Chr(34) & " 2>&1"
+          " 1>>" & Chr(34) & logFile & Chr(34) & " 2>&1" & _
+          " && echo done>" & Chr(34) & pidFile & Chr(34)
 
     LogVba "cmd = cmd.exe /c """ & cmd & """"
 
     Set wsh = CreateObject("WScript.Shell")
-    RunPythonWithWb = wsh.Run("cmd.exe /c """ & cmd & """", 0, True)
+    ' False = асинхронный запуск — Excel НЕ блокируется
+    wsh.Run "cmd.exe /c """ & cmd & """", 0, False
     Set wsh = Nothing
+
+    ' Ждём флага завершения (макс 5 минут)
+    waitSec = 300
+    elapsed = 0
+    Application.StatusBar = "Ожидание Python..."
+    Do While elapsed < waitSec
+        Application.Wait Now + TimeSerial(0, 0, 1)
+        elapsed = elapsed + 1
+        If Dir(pidFile) <> "" Then
+            On Error Resume Next
+            Kill pidFile
+            On Error GoTo 0
+            RunPythonWithWb = 0
+            Application.StatusBar = False
+            Exit Function
+        End If
+    Loop
+
+    ' Таймаут
+    Application.StatusBar = False
+    LogVba "RunPythonWithWb TIMEOUT after " & waitSec & "s"
+    RunPythonWithWb = 1
 End Function
 
 
