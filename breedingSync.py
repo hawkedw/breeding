@@ -12,7 +12,6 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH         = os.path.join(BASE_DIR, "breedingSync.log")
-TEMP_RESULT_PATH = os.path.join(BASE_DIR, "_temp_submit_result.json")
 
 
 def log(msg: str):
@@ -110,21 +109,15 @@ EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 
 
 def esri_ms_to_dt(ms):
-    """ESRI UTC ms -> local datetime (+3h)."""
     return EPOCH + datetime.timedelta(milliseconds=int(ms)) + OFFSET
 
 def dt_to_excel_serial(dt: datetime.datetime) -> float:
-    """datetime -> Excel serial (float), COM не делает tz-конвертацию."""
     if dt.tzinfo is not None:
         dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     delta = dt - EXCEL_EPOCH
     return delta.days + (delta.seconds + delta.microseconds / 1_000_000) / 86400.0
 
 def arc_ms_to_excel_serial(ms, date_only=False) -> float:
-    """ArcGIS ms -> Excel serial.
-    date_only=True: без сдвига на UTC+3, чистая дата (midnight UTC).
-    date_only=False: сдвиг +3h, дата+время.
-    """
     if date_only:
         d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
         dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
@@ -171,64 +164,60 @@ def query_layer(url, where="1=1", order_by=""):
     return feats
 
 
-# ---------- ATTACH WORKBOOK (shared by import and submit) ----------
+# ---------- ATTACH WORKBOOK ----------
 
 def _attach_workbook(wb_path: str):
+    """Attach to already-open workbook via GetActiveObject.
+    Called only after VBA has released the COM lock (Sleep+DoEvents polling).
+    """
     import win32com.client as win32
+    import time
 
-    try:
-        xl = win32.GetActiveObject("Excel.Application")
-        log("Attached to running Excel via GetActiveObject")
-    except Exception as e:
-        log(f"GetActiveObject failed: {e}")
-        raise RuntimeError(
-            "Cannot attach to Excel. Make sure the workbook is open."
-        ) from e
+    # retry a few times in case DoEvents hasn't fully released yet
+    last_err = None
+    for attempt in range(10):
+        try:
+            xl = win32.GetActiveObject("Excel.Application")
+            break
+        except Exception as e:
+            last_err = e
+            log(f"GetActiveObject attempt {attempt+1} failed: {e}, retrying...")
+            time.sleep(1)
+    else:
+        raise RuntimeError(f"Cannot attach to Excel: {last_err}")
 
     target_full = wb_path.lower()
     target_name = os.path.basename(wb_path).lower()
 
     wb = None
     by_name = None
-    try:
-        for book in xl.Workbooks:
-            try:
-                full = book.FullName.lower()
-                log(f"  checking open workbook: {book.FullName}")
-                if full == target_full:
-                    wb = book
-                    break
-                if os.path.basename(full) == target_name and by_name is None:
-                    by_name = book
-            except Exception:
-                continue
-    except Exception as e:
-        log(f"Workbooks iteration error: {e}")
-        raise
+    for book in xl.Workbooks:
+        try:
+            full = book.FullName.lower()
+            log(f"  checking open workbook: {book.FullName}")
+            if full == target_full:
+                wb = book
+                break
+            if os.path.basename(full) == target_name and by_name is None:
+                by_name = book
+        except Exception:
+            continue
 
     if wb is None and by_name is not None:
         log(f"Exact path not matched, using filename match: {by_name.FullName}")
         wb = by_name
 
     if wb is None:
-        names = []
-        try:
-            for book in xl.Workbooks:
-                names.append(book.FullName)
-        except Exception:
-            pass
-        log(f"Open workbooks: {names}")
+        names = [b.FullName for b in xl.Workbooks]
         raise RuntimeError(
-            f"Workbook not found in open Excel instance.\n"
-            f"Expected: {wb_path}\n"
-            f"Open: {names}"
+            f"Workbook not found.\nExpected: {wb_path}\nOpen: {names}"
         )
 
     log(f"Found open workbook: {wb.FullName}")
     return xl, wb
 
 
-# ---------- IMPORT: write directly into open workbook via GetActiveObject ----------
+# ---------- IMPORT ----------
 
 def _to_2d(rows):
     return tuple(tuple(r) for r in rows)
@@ -240,109 +229,99 @@ def import_registry(wb_path: str):
     try:
         import win32com.client as win32
     except ImportError:
-        log("ERROR: pywin32 not installed. Run: pip install pywin32")
+        log("ERROR: pywin32 not installed")
         return 1
 
-    xl, wb = _attach_workbook(wb_path)
+    # --- fetch data from ArcGIS BEFORE touching Excel ---
+    parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
+    log(f"Parent: {len(parent_feats)} features")
+    parent_feats.sort(key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0, reverse=True)
 
-    excel = xl
-    excel.ScreenUpdating = False
-    excel.DisplayAlerts = False
+    child_feats = query_layer(URL_CHILD, "1=1", "")
+    log(f"Child: {len(child_feats)} records")
 
-    try:
-        parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
-        log(f"Parent: {len(parent_feats)} features")
-        parent_feats.sort(key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0, reverse=True)
+    child_index = {}
+    for cf in child_feats:
+        attrs = cf.get("attributes", {})
+        pgid = attrs.get("parentglobalid")
+        if pgid:
+            child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
 
-        child_feats = query_layer(URL_CHILD, "1=1", "")
-        log(f"Child: {len(child_feats)} records")
+    # build data rows in memory
+    data = []
+    headers = [""] * TOTAL_COLS
+    for f in FIELDS_PARENT:
+        col = f.get("col")
+        if col:
+            headers[col - 1] = f["alias"]
+    for c in CUSTOMER_COLS:
+        headers[c - 1] = CUSTOMER_ALIAS
+    headers[DIRTY_COL - 1]      = DIRTY_ALIAS
+    headers[PARENT_GID_COL - 1] = "GlobalID"
+    headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
 
-        child_index = {}
-        for cf in child_feats:
-            attrs = cf.get("attributes", {})
-            pgid = attrs.get("parentglobalid")
-            if pgid:
-                child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
-
-        # Get or create sheet
-        try:
-            sh = wb.Worksheets(SHEET_REGISTRY)
-            sh.Cells.Clear()
-        except Exception:
-            sh = wb.Worksheets.Add()
-            sh.Name = SHEET_REGISTRY
-
-        # --- Шапка ---
-        headers = [""] * TOTAL_COLS
+    for ft in parent_feats:
+        attrs = ft.get("attributes", {})
+        row = [""] * TOTAL_COLS
         for f in FIELDS_PARENT:
             col = f.get("col")
-            if col:
-                headers[col - 1] = f["alias"]
-        for c in CUSTOMER_COLS:
-            headers[c - 1] = CUSTOMER_ALIAS
-        headers[DIRTY_COL - 1]      = DIRTY_ALIAS
-        headers[PARENT_GID_COL - 1] = "GlobalID"
-        headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
-        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+            if not col:
+                continue
+            v = attrs.get(f["n"])
+            if v is None:
+                continue
+            if f["type"] == "DATE" and isinstance(v, (int, float)):
+                row[col - 1] = arc_ms_to_excel_serial(v, date_only=(f["n"] in DATE_ONLY_FIELDS))
+            else:
+                row[col - 1] = v
 
-        # --- Данные ---
-        data = []
-        for ft in parent_feats:
-            attrs = ft.get("attributes", {})
-            row = [""] * TOTAL_COLS
+        parent_gid = attrs.get("GlobalID", "")
+        customers  = child_index.get(parent_gid, [])
+        child_gid  = ""
+        if customers:
+            for cf in child_feats:
+                if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
+                    child_gid = cf.get("attributes", {}).get("GlobalID", "")
+                    break
+        for i, c in enumerate(CUSTOMER_COLS):
+            if i < len(customers):
+                row[c - 1] = customers[i] if customers[i] is not None else ""
 
-            for f in FIELDS_PARENT:
-                col = f.get("col")
-                if not col:
-                    continue
-                v = attrs.get(f["n"])
-                if v is None:
-                    continue
-                if f["type"] == "DATE" and isinstance(v, (int, float)):
-                    row[col - 1] = arc_ms_to_excel_serial(v, date_only=(f["n"] in DATE_ONLY_FIELDS))
-                else:
-                    row[col - 1] = v
+        row[DIRTY_COL - 1]      = False
+        row[PARENT_GID_COL - 1] = parent_gid
+        row[CHILD_GID_COL - 1]  = child_gid
+        data.append(row)
 
-            parent_gid = attrs.get("GlobalID", "")
-            customers  = child_index.get(parent_gid, [])
-            child_gid  = ""
-            if customers:
-                for cf in child_feats:
-                    if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
-                        child_gid = cf.get("attributes", {}).get("GlobalID", "")
-                        break
-            for i, c in enumerate(CUSTOMER_COLS):
-                if i < len(customers):
-                    row[c - 1] = customers[i] if customers[i] is not None else ""
+    log(f"Data ready: {len(data)} rows. Attaching to Excel...")
 
-            row[DIRTY_COL - 1]      = False
-            row[PARENT_GID_COL - 1] = parent_gid
-            row[CHILD_GID_COL - 1]  = child_gid
-            data.append(row)
+    # --- now attach to Excel (VBA is in DoEvents loop = COM available) ---
+    xl, wb = _attach_workbook(wb_path)
 
-        if data:
-            data_rng = sh.Range(sh.Cells(2, 1), sh.Cells(1 + len(data), TOTAL_COLS))
-            data_rng.Value = _to_2d(data)
+    try:
+        sh = wb.Worksheets(SHEET_REGISTRY)
+        sh.Cells.Clear()
+    except Exception:
+        sh = wb.Worksheets.Add()
+        sh.Name = SHEET_REGISTRY
 
-            # --- Форматы дат ---
-            for f in FIELDS_PARENT:
-                col = f.get("col")
-                if not col or f["type"] != "DATE":
-                    continue
-                fmt = "dd.mm.yyyy" if f["n"] in DATE_ONLY_FIELDS else "dd.mm.yyyy hh:mm"
-                rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col))
-                rng.NumberFormat = fmt
+    sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
 
-        wb.Save()
-        log(f"import_registry complete: {len(data)} rows -> {wb.FullName}")
-        return 0
+    if data:
+        sh.Range(sh.Cells(2, 1), sh.Cells(1 + len(data), TOTAL_COLS)).Value = _to_2d(data)
 
-    finally:
-        excel.ScreenUpdating = True
-        excel.DisplayAlerts = True
+        for f in FIELDS_PARENT:
+            col = f.get("col")
+            if not col or f["type"] != "DATE":
+                continue
+            fmt = "dd.mm.yyyy" if f["n"] in DATE_ONLY_FIELDS else "dd.mm.yyyy hh:mm"
+            sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col)).NumberFormat = fmt
+
+    wb.Save()
+    log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
+    return 0
 
 
-# ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
+# ---------- SUBMIT ----------
 
 def submit_registry(wb_path: str):
     log("=== submit_registry START ===")
@@ -350,154 +329,134 @@ def submit_registry(wb_path: str):
     try:
         import win32com.client as win32
     except ImportError:
-        log("ERROR: pywin32 not installed. Run: pip install pywin32")
+        log("ERROR: pywin32 not installed")
         return 1
 
     xl, wb = _attach_workbook(wb_path)
 
     try:
-        try:
-            sh = wb.Worksheets(SHEET_REGISTRY)
-        except Exception:
-            log(f"ERROR: sheet '{SHEET_REGISTRY}' not found in {wb_path}")
-            return 1
+        sh = wb.Worksheets(SHEET_REGISTRY)
+    except Exception:
+        log(f"ERROR: sheet '{SHEET_REGISTRY}' not found")
+        return 1
 
-        last_col = sh.Cells(1, sh.Columns.Count).End(-4159).Column  # xlToLeft
-        last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row        # xlUp
+    last_col = sh.Cells(1, sh.Columns.Count).End(-4159).Column
+    last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
 
-        if last_row < 2:
-            log("No data rows")
-            return 0
-
-        hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
-
-        def col_idx(name):
-            for i, h in enumerate(hdr_vals):
-                if h == name:
-                    return i + 1
-            return 0
-
-        dirty_col = col_idx(DIRTY_ALIAS)
-        gid_col   = col_idx("GlobalID")
-
-        if not dirty_col:
-            log("ERROR: 'Dirty' column not found")
-            return 1
-        if not gid_col:
-            log("ERROR: 'GlobalID' column not found")
-            return 1
-
-        last_row = max(
-            last_row,
-            sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
-            sh.Cells(sh.Rows.Count, gid_col).End(-4162).Row,
-        )
-
-        data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
-        if not data:
-            log("No data")
-            return 0
-
-        name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
-
-        token   = get_token()
-        edits   = []
-        row_map = []
-
-        for r_idx, row in enumerate(data, start=2):
-            row = list(row)
-            dirty_val = row[dirty_col - 1]
-            if not dirty_val:
-                continue
-
-            parent_gid = row[gid_col - 1]
-            if not parent_gid:
-                log(f"Row {r_idx}: no GlobalID, skip")
-                continue
-
-            attrs = {"GlobalID": str(parent_gid).strip()}
-
-            for c_idx, alias in enumerate(hdr_vals, start=1):
-                if not alias or alias == DIRTY_ALIAS:
-                    continue
-                if alias in ("GlobalID", "ChildGlobalID"):
-                    continue
-
-                field_name = ALIAS_TO_NAME.get(alias, alias)
-                if field_name.lower() in SYS_SKIP:
-                    continue
-                f_type = name_to_type.get(field_name)
-                if f_type is None:
-                    continue
-
-                v = row[c_idx - 1]
-
-                if v in ("", None):
-                    attrs[field_name] = None
-                elif f_type == "DATE":
-                    date_only = field_name in DATE_ONLY_FIELDS
-                    if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
-                        attrs[field_name] = date_to_esri(v)
-                    elif isinstance(v, datetime.datetime):
-                        if date_only:
-                            attrs[field_name] = date_to_esri(v.date())
-                        else:
-                            attrs[field_name] = dt_to_esri(v)
-                    elif isinstance(v, (int, float)):
-                        dt = excel_serial_to_dt(float(v))
-                        if date_only:
-                            attrs[field_name] = date_to_esri(dt.date())
-                        else:
-                            attrs[field_name] = dt_to_esri(dt)
-                    else:
-                        attrs[field_name] = None
-                elif f_type == "NUMBER":
-                    try:
-                        attrs[field_name] = float(v)
-                    except Exception:
-                        attrs[field_name] = None
-                else:
-                    attrs[field_name] = v
-
-            edits.append({"attributes": attrs})
-            row_map.append((r_idx, dirty_col))
-
-        log(f"Dirty rows found: {len(edits)}")
-
-        if not edits:
-            log("No dirty rows")
-            return 0
-
-        log(f"attrs sample: {json.dumps(edits[0]['attributes'], ensure_ascii=False)}")
-
-        feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
-        resp = requests.post(URL_PARENT + "/applyEdits", data={
-            "f": "json", "token": token,
-            "rollbackOnFailure": "True", "useGlobalIds": "True",
-            "updates": feats_json,
-        }, timeout=60)
-        js = resp.json()
-        log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
-
-        if "error" in js:
-            log(f"applyEdits error: {js['error']}")
-            return 1
-
-        for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
-            ok = bool(r.get("success"))
-            err_msg = r.get("error", {}).get("description", "")
-            if ok:
-                sh.Cells(excel_row, d_col).Value = False
-                log(f"Row {excel_row}: OK")
-            else:
-                log(f"Row {excel_row}: FAILED - {err_msg}")
-
-        wb.Save()
-        log("submit_registry complete")
+    if last_row < 2:
+        log("No data rows")
         return 0
 
-    finally:
-        pass  # workbook stays open — user opened it
+    hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
+
+    def col_idx(name):
+        for i, h in enumerate(hdr_vals):
+            if h == name:
+                return i + 1
+        return 0
+
+    dirty_col = col_idx(DIRTY_ALIAS)
+    gid_col   = col_idx("GlobalID")
+
+    if not dirty_col:
+        log("ERROR: 'Dirty' column not found")
+        return 1
+    if not gid_col:
+        log("ERROR: 'GlobalID' column not found")
+        return 1
+
+    last_row = max(
+        last_row,
+        sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
+        sh.Cells(sh.Rows.Count, gid_col).End(-4162).Row,
+    )
+
+    data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
+    if not data:
+        log("No data")
+        return 0
+
+    name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
+    token   = get_token()
+    edits   = []
+    row_map = []
+
+    for r_idx, row in enumerate(data, start=2):
+        row = list(row)
+        if not row[dirty_col - 1]:
+            continue
+
+        parent_gid = row[gid_col - 1]
+        if not parent_gid:
+            log(f"Row {r_idx}: no GlobalID, skip")
+            continue
+
+        attrs = {"GlobalID": str(parent_gid).strip()}
+
+        for c_idx, alias in enumerate(hdr_vals, start=1):
+            if not alias or alias == DIRTY_ALIAS:
+                continue
+            if alias in ("GlobalID", "ChildGlobalID"):
+                continue
+            field_name = ALIAS_TO_NAME.get(alias, alias)
+            if field_name.lower() in SYS_SKIP:
+                continue
+            f_type = name_to_type.get(field_name)
+            if f_type is None:
+                continue
+            v = row[c_idx - 1]
+            if v in ("", None):
+                attrs[field_name] = None
+            elif f_type == "DATE":
+                date_only = field_name in DATE_ONLY_FIELDS
+                if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
+                    attrs[field_name] = date_to_esri(v)
+                elif isinstance(v, datetime.datetime):
+                    attrs[field_name] = date_to_esri(v.date()) if date_only else dt_to_esri(v)
+                elif isinstance(v, (int, float)):
+                    dt = excel_serial_to_dt(float(v))
+                    attrs[field_name] = date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
+                else:
+                    attrs[field_name] = None
+            elif f_type == "NUMBER":
+                try:
+                    attrs[field_name] = float(v)
+                except Exception:
+                    attrs[field_name] = None
+            else:
+                attrs[field_name] = v
+
+        edits.append({"attributes": attrs})
+        row_map.append((r_idx, dirty_col))
+
+    log(f"Dirty rows found: {len(edits)}")
+    if not edits:
+        log("No dirty rows")
+        return 0
+
+    feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
+    resp = requests.post(URL_PARENT + "/applyEdits", data={
+        "f": "json", "token": token,
+        "rollbackOnFailure": "True", "useGlobalIds": "True",
+        "updates": feats_json,
+    }, timeout=60)
+    js = resp.json()
+    log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
+
+    if "error" in js:
+        log(f"applyEdits error: {js['error']}")
+        return 1
+
+    for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
+        if r.get("success"):
+            sh.Cells(excel_row, d_col).Value = False
+            log(f"Row {excel_row}: OK")
+        else:
+            log(f"Row {excel_row}: FAILED - {r.get('error', {}).get('description', '')}")
+
+    wb.Save()
+    log("submit_registry complete")
+    return 0
 
 
 # ---------- MAIN ----------
