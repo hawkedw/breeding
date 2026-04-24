@@ -1,30 +1,67 @@
-' Module2 - RunPython helper
+' Module2 — PythonRunner
 Option Explicit
 
+Private Const PY_EXE    As String = "C:\Python311\python.exe"
+Private Const PY_SCRIPT As String = "breedingSync.py"
+
+
 Function RunPython(action As String) As Long
-    Dim wsh As Object
-    Dim py As String
-    Dim script As String
-    Dim logPath As String
-    Dim cmd As String
-    Dim fNum As Integer
+    Dim script  As String
+    Dim logFile As String
+    Dim cmd     As String
+    Dim wsh     As Object
 
-    py      = "C:\Python311\python.exe"
-    script  = ThisWorkbook.Path & "\breedingSync.py"
-    logPath = ThisWorkbook.Path & "\breedingSync.log"
+    script  = ThisWorkbook.Path & "\" & PY_SCRIPT
+    logFile = ThisWorkbook.Path & "\breedingSync.log"
 
-    cmd = "cmd.exe /c " & Chr(34) & _
-          Chr(34) & py & Chr(34) & " " & _
+    cmd = Chr(34) & PY_EXE & Chr(34) & " " & _
           Chr(34) & script & Chr(34) & " " & action & _
-          " 1>>" & Chr(34) & logPath & Chr(34) & _
-          " 2>&1" & Chr(34)
+          " 1>>" & Chr(34) & logFile & Chr(34) & " 2>&1"
 
-    ' Debug: write cmd to log before running
-    fNum = FreeFile
-    Open logPath For Append As #fNum
-    Print #fNum, "[VBA] cmd = " & cmd
-    Close #fNum
+    LogVba "cmd = cmd.exe /c """ & cmd & """"
 
     Set wsh = CreateObject("WScript.Shell")
-    RunPython = wsh.Run(cmd, 0, True)
+    RunPython = wsh.Run("cmd.exe /c """ & cmd & """", 0, True)
+    Set wsh = Nothing
 End Function
+
+
+Function RunPythonWithWb(action As String) As Long
+    Dim script  As String
+    Dim wbPath  As String
+    Dim logFile As String
+    Dim cmd     As String
+    Dim wsh     As Object
+
+    script  = ThisWorkbook.Path & "\" & PY_SCRIPT
+    wbPath  = ThisWorkbook.FullName
+    logFile = ThisWorkbook.Path & "\breedingSync.log"
+
+    cmd = Chr(34) & PY_EXE & Chr(34) & " " & _
+          Chr(34) & script & Chr(34) & " " & action & " " & _
+          Chr(34) & wbPath & Chr(34) & _
+          " 1>>" & Chr(34) & logFile & Chr(34) & " 2>&1"
+
+    LogVba "cmd = cmd.exe /c """ & cmd & """"
+
+    Set wsh = CreateObject("WScript.Shell")
+    RunPythonWithWb = wsh.Run("cmd.exe /c """ & cmd & """", 0, True)
+    Set wsh = Nothing
+End Function
+
+
+Sub LogVba(msg As String)
+    Dim logFile As String
+    Dim ts      As String
+    Dim fNum    As Integer
+
+    logFile = ThisWorkbook.Path & "\breedingSync.log"
+    ts = Format(Now, "[YYYY-MM-DD HH:MM:SS]")
+
+    On Error Resume Next
+    fNum = FreeFile
+    Open logFile For Append As #fNum
+    Print #fNum, ts & " [VBA] " & msg
+    Close #fNum
+    On Error GoTo 0
+End Sub
