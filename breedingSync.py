@@ -118,6 +118,13 @@ def esri_ms_to_date(ms):
     """ESRI UTC ms -> datetime.date (no timezone shift)."""
     return (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
 
+def esri_ms_to_dt_date_only(ms):
+    """ESRI UTC ms -> datetime.datetime midnight (no tz shift).
+    openpyxl writes it as a real Excel date serial; number_format hides time.
+    """
+    d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
+    return datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+
 def dt_to_esri(dt):
     if dt.tzinfo is not None:
         dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
@@ -139,7 +146,7 @@ def arc_value_to_cell(v, date_only=False):
     date_only=False -> returns datetime.datetime (+3h local)
     """
     if date_only:
-        return esri_ms_to_date(int(float(v)))   # datetime.date, no time part
+        return esri_ms_to_date(int(float(v)))
     return esri_ms_to_dt(int(float(v)))
 
 
@@ -213,7 +220,9 @@ def import_registry():
 
     for ft in parent_feats:
         attrs = ft.get("attributes", {})
-        row = [""] * TOTAL_COLS
+
+        ws.append([""] * TOTAL_COLS)
+        cur_row = ws.max_row
 
         for f in FIELDS_PARENT:
             col = f.get("col")
@@ -222,11 +231,17 @@ def import_registry():
             v = attrs.get(f["n"])
             if v is None:
                 continue
+
+            cell = ws.cell(row=cur_row, column=col)
             if f["type"] == "DATE" and isinstance(v, (int, float)):
-                date_only = f["n"] in DATE_ONLY_FIELDS
-                row[col - 1] = arc_value_to_cell(v, date_only=date_only)
+                if f["n"] in DATE_ONLY_FIELDS:
+                    cell.value = esri_ms_to_dt_date_only(v)
+                    cell.number_format = fmt_date
+                else:
+                    cell.value = esri_ms_to_dt(v)
+                    cell.number_format = fmt_dt
             else:
-                row[col - 1] = v
+                cell.value = v
 
         parent_gid = attrs.get("GlobalID", "")
         customers  = child_index.get(parent_gid, [])
@@ -236,25 +251,14 @@ def import_registry():
                 if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
                     child_gid = cf.get("attributes", {}).get("GlobalID", "")
                     break
+
         for i, c in enumerate(CUSTOMER_COLS):
             if i < len(customers):
-                row[c - 1] = customers[i] if customers[i] is not None else ""
+                ws.cell(row=cur_row, column=c).value = customers[i] if customers[i] is not None else ""
 
-        row[DIRTY_COL - 1]      = False
-        row[PARENT_GID_COL - 1] = parent_gid
-        row[CHILD_GID_COL - 1]  = child_gid
-        ws.append(row)
-
-    # apply number formats: date-only cols get DD.MM.YYYY, datetime cols get DD.MM.YYYY HH:MM
-    for f in FIELDS_PARENT:
-        col = f.get("col")
-        if not col or f["type"] != "DATE":
-            continue
-        fmt = fmt_date if f["n"] in DATE_ONLY_FIELDS else fmt_dt
-        for row_idx in range(2, ws.max_row + 1):
-            cell = ws.cell(row=row_idx, column=col)
-            if cell.value is not None:
-                cell.number_format = fmt
+        ws.cell(row=cur_row, column=DIRTY_COL).value      = False
+        ws.cell(row=cur_row, column=PARENT_GID_COL).value = parent_gid
+        ws.cell(row=cur_row, column=CHILD_GID_COL).value  = child_gid
 
     if os.path.exists(TEMP_IMPORT_PATH):
         os.remove(TEMP_IMPORT_PATH)
@@ -420,7 +424,6 @@ def submit_registry(wb_path: str):
                 elif f_type == "DATE":
                     date_only = field_name in DATE_ONLY_FIELDS
                     if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
-                        # pure date from xlsx cell
                         attrs[field_name] = date_to_esri(v)
                     elif isinstance(v, datetime.datetime):
                         if date_only:
