@@ -1,5 +1,5 @@
 # breedingSync.py
-# import_registry -> writes _temp_import.xlsx via win32com (like milkQuality_Forms example)
+# import_registry -> attaches to open workbook via GetActiveObject (like submit_registry)
 # submit_registry -> reads dirty rows directly from workbook via win32com, sends to ArcGIS
 
 import sys, os, json, datetime
@@ -12,7 +12,6 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH         = os.path.join(BASE_DIR, "breedingSync.log")
-TEMP_IMPORT_PATH = os.path.join(BASE_DIR, "_temp_import.xlsx")
 TEMP_RESULT_PATH = os.path.join(BASE_DIR, "_temp_submit_result.json")
 
 
@@ -172,13 +171,70 @@ def query_layer(url, where="1=1", order_by=""):
     return feats
 
 
-# ---------- IMPORT: write temp xlsx via win32com ----------
+# ---------- ATTACH WORKBOOK (shared by import and submit) ----------
+
+def _attach_workbook(wb_path: str):
+    import win32com.client as win32
+
+    try:
+        xl = win32.GetActiveObject("Excel.Application")
+        log("Attached to running Excel via GetActiveObject")
+    except Exception as e:
+        log(f"GetActiveObject failed: {e}")
+        raise RuntimeError(
+            "Cannot attach to Excel. Make sure the workbook is open."
+        ) from e
+
+    target_full = wb_path.lower()
+    target_name = os.path.basename(wb_path).lower()
+
+    wb = None
+    by_name = None
+    try:
+        for book in xl.Workbooks:
+            try:
+                full = book.FullName.lower()
+                log(f"  checking open workbook: {book.FullName}")
+                if full == target_full:
+                    wb = book
+                    break
+                if os.path.basename(full) == target_name and by_name is None:
+                    by_name = book
+            except Exception:
+                continue
+    except Exception as e:
+        log(f"Workbooks iteration error: {e}")
+        raise
+
+    if wb is None and by_name is not None:
+        log(f"Exact path not matched, using filename match: {by_name.FullName}")
+        wb = by_name
+
+    if wb is None:
+        names = []
+        try:
+            for book in xl.Workbooks:
+                names.append(book.FullName)
+        except Exception:
+            pass
+        log(f"Open workbooks: {names}")
+        raise RuntimeError(
+            f"Workbook not found in open Excel instance.\n"
+            f"Expected: {wb_path}\n"
+            f"Open: {names}"
+        )
+
+    log(f"Found open workbook: {wb.FullName}")
+    return xl, wb
+
+
+# ---------- IMPORT: write directly into open workbook via GetActiveObject ----------
 
 def _to_2d(rows):
     return tuple(tuple(r) for r in rows)
 
 
-def import_registry():
+def import_registry(wb_path: str):
     log("=== import_registry START ===")
 
     try:
@@ -187,46 +243,35 @@ def import_registry():
         log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
-    parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
-    log(f"Parent: {len(parent_feats)} features")
-    parent_feats.sort(key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0, reverse=True)
+    xl, wb = _attach_workbook(wb_path)
 
-    child_feats = query_layer(URL_CHILD, "1=1", "")
-    log(f"Child: {len(child_feats)} records")
-
-    child_index = {}
-    for cf in child_feats:
-        attrs = cf.get("attributes", {})
-        pgid = attrs.get("parentglobalid")
-        if pgid:
-            child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
-
-    # Открываем Excel скрыто
-    excel = win32.Dispatch("Excel.Application")
-    excel.Visible = False
-    excel.DisplayAlerts = False
+    excel = xl
     excel.ScreenUpdating = False
+    excel.DisplayAlerts = False
 
-    abs_path = os.path.abspath(TEMP_IMPORT_PATH)
+    try:
+        parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
+        log(f"Parent: {len(parent_feats)} features")
+        parent_feats.sort(key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0, reverse=True)
 
-    # если файл уже есть — открываем его, иначе создаём новый
-    if os.path.exists(abs_path):
-        wb = excel.Workbooks.Open(abs_path)
+        child_feats = query_layer(URL_CHILD, "1=1", "")
+        log(f"Child: {len(child_feats)} records")
+
+        child_index = {}
+        for cf in child_feats:
+            attrs = cf.get("attributes", {})
+            pgid = attrs.get("parentglobalid")
+            if pgid:
+                child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
+
+        # Get or create sheet
         try:
             sh = wb.Worksheets(SHEET_REGISTRY)
             sh.Cells.Clear()
         except Exception:
-            wb.Close(SaveChanges=False)
-            os.remove(abs_path)
-            wb = excel.Workbooks.Add()
-            sh = wb.Worksheets(1)
+            sh = wb.Worksheets.Add()
             sh.Name = SHEET_REGISTRY
-    else:
-        wb = excel.Workbooks.Add()
-        sh = wb.Worksheets(1)
-        sh.Name = SHEET_REGISTRY
 
-    try:
         # --- Шапка ---
         headers = [""] * TOTAL_COLS
         for f in FIELDS_PARENT:
@@ -288,78 +333,16 @@ def import_registry():
                 rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col))
                 rng.NumberFormat = fmt
 
-        wb.SaveAs(abs_path, 51)  # 51 = xlOpenXMLWorkbook (.xlsx)
-        log(f"import_registry complete: {len(data)} rows -> {abs_path}")
+        wb.Save()
+        log(f"import_registry complete: {len(data)} rows -> {wb.FullName}")
         return 0
 
     finally:
-        try:
-            wb.Close(SaveChanges=False)
-        except Exception:
-            pass
-        try:
-            excel.Quit()
-        except Exception:
-            pass
         excel.ScreenUpdating = True
+        excel.DisplayAlerts = True
 
 
 # ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
-
-def _attach_workbook(wb_path: str):
-    import win32com.client as win32
-
-    try:
-        xl = win32.GetActiveObject("Excel.Application")
-        log("Attached to running Excel via GetActiveObject")
-    except Exception as e:
-        log(f"GetActiveObject failed: {e}")
-        raise RuntimeError(
-            "Cannot attach to Excel. Make sure the workbook is open."
-        ) from e
-
-    target_full = wb_path.lower()
-    target_name = os.path.basename(wb_path).lower()
-
-    wb = None
-    by_name = None
-    try:
-        for book in xl.Workbooks:
-            try:
-                full = book.FullName.lower()
-                log(f"  checking open workbook: {book.FullName}")
-                if full == target_full:
-                    wb = book
-                    break
-                if os.path.basename(full) == target_name and by_name is None:
-                    by_name = book
-            except Exception:
-                continue
-    except Exception as e:
-        log(f"Workbooks iteration error: {e}")
-        raise
-
-    if wb is None and by_name is not None:
-        log(f"Exact path not matched, using filename match: {by_name.FullName}")
-        wb = by_name
-
-    if wb is None:
-        names = []
-        try:
-            for book in xl.Workbooks:
-                names.append(book.FullName)
-        except Exception:
-            pass
-        log(f"Open workbooks: {names}")
-        raise RuntimeError(
-            f"Workbook not found in open Excel instance.\n"
-            f"Expected: {wb_path}\n"
-            f"Open: {names}"
-        )
-
-    log(f"Found open workbook: {wb.FullName}")
-    return xl, wb, False
-
 
 def submit_registry(wb_path: str):
     log("=== submit_registry START ===")
@@ -370,7 +353,7 @@ def submit_registry(wb_path: str):
         log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
-    xl, wb, opened_here = _attach_workbook(wb_path)
+    xl, wb = _attach_workbook(wb_path)
 
     try:
         try:
@@ -514,11 +497,7 @@ def submit_registry(wb_path: str):
         return 0
 
     finally:
-        if opened_here:
-            try:
-                wb.Close(SaveChanges=True)
-            except Exception:
-                pass
+        pass  # workbook stays open — user opened it
 
 
 # ---------- MAIN ----------
@@ -533,23 +512,22 @@ def normalize_action(a):
 def main(argv=None):
     if argv is None:
         argv = sys.argv
-    if len(argv) < 2:
-        log("Usage: breedingSync.py <action> [workbook_path]")
+    if len(argv) < 3:
+        log("Usage: breedingSync.py <action> <workbook_path>")
         return 1
 
-    action = normalize_action(argv[1])
+    action  = normalize_action(argv[1])
+    wb_path = argv[2]
+
     log("=== breedingSync START ===")
-    log(f"action={action!r}")
+    log(f"action={action!r}  workbook={wb_path}")
     log(f"python={sys.executable}  cwd={os.getcwd()}")
 
     if action == "import_registry":
-        return import_registry() or 0
+        return import_registry(wb_path) or 0
 
     if action == "submit_registry":
-        if len(argv) < 3:
-            log("ERROR: submit_registry requires workbook_path as 2nd argument")
-            return 1
-        return submit_registry(argv[2]) or 0
+        return submit_registry(wb_path) or 0
 
     log(f"Unknown action: {action!r}. Available: import_registry, submit_registry")
     return 1
