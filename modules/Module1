@@ -1,21 +1,16 @@
 ' Module1 — BreedingButtons
 Option Explicit
 
-Private Const TEMP_IMPORT As String = "_temp_import.xlsx"
-Private Const SHEET_REG   As String = "Реестр опытов"
-Private Const DIRTY_COL   As Long   = 29
-Private Const TOTAL_COLS  As Long   = 31
+Private Const SHEET_REG  As String = "Реестр опытов"
+Private Const DIRTY_COL  As Long   = 29
+Private Const TOTAL_COLS As Long   = 31
 
 
 Sub ImportRegistry()
     Dim exitCode As Long
-    Dim tempPath As String
-    tempPath = ThisWorkbook.Path & "\" & TEMP_IMPORT
-
-    If Dir(tempPath) <> "" Then Kill tempPath
 
     Application.StatusBar = "Выполняется импорт..."
-    exitCode = RunPython("import_registry")
+    exitCode = RunPythonWithWb("import_registry")
     Application.StatusBar = False
 
     If exitCode <> 0 Then
@@ -25,69 +20,26 @@ Sub ImportRegistry()
         Exit Sub
     End If
 
-    If Not WaitForFile(tempPath, 30) Then
-        MsgBox "Файл " & TEMP_IMPORT & " не появился. См. лог.", vbCritical, "Импорт"
-        Exit Sub
-    End If
+    ' Обновляем вид — данные уже записаны Python напрямую в книгу
+    Application.ScreenUpdating = True
 
-    PasteImportData tempPath
-End Sub
-
-
-Private Sub PasteImportData(tempPath As String)
-    Dim srcWb   As Workbook
-    Dim srcSh   As Worksheet
-    Dim dstSh   As Worksheet
-    Dim lastRow As Long
-    Dim lastCol As Long
-
-    Application.ScreenUpdating = False
-    Application.EnableEvents   = False
-
-    Set srcWb = Workbooks.Open(tempPath, ReadOnly:=True)
-    Set srcSh = srcWb.Worksheets(1)
-
+    Dim dstSh As Worksheet
     On Error Resume Next
     Set dstSh = ThisWorkbook.Worksheets(SHEET_REG)
     On Error GoTo 0
-    If dstSh Is Nothing Then
-        Set dstSh = ThisWorkbook.Worksheets.Add
-        dstSh.Name = SHEET_REG
+    If Not dstSh Is Nothing Then
+        dstSh.Activate
+        ActiveWindow.FreezePanes = False
+        ActiveWindow.SplitRow    = 1
+        ActiveWindow.SplitColumn = 0
+        ActiveWindow.FreezePanes = True
     End If
 
-    On Error Resume Next
-    dstSh.AutoFilterMode = False
-    dstSh.Cells.EntireRow.Hidden    = False
-    dstSh.Cells.EntireColumn.Hidden = False
-    On Error GoTo 0
-
-    lastRow = dstSh.Cells(dstSh.Rows.Count, 1).End(-4162).Row
-    If lastRow >= 1 Then dstSh.Cells.ClearContents
-
-    lastRow = srcSh.Cells(srcSh.Rows.Count, 1).End(-4162).Row
-    lastCol = srcSh.Cells(1, srcSh.Columns.Count).End(-4159).Column
-    If lastRow >= 1 And lastCol >= 1 Then
-        dstSh.Range(dstSh.Cells(1, 1), dstSh.Cells(lastRow, lastCol)).Value = _
-            srcSh.Range(srcSh.Cells(1, 1), srcSh.Cells(lastRow, lastCol)).Value
+    Dim lastRow As Long
+    If Not dstSh Is Nothing Then
+        lastRow = dstSh.Cells(dstSh.Rows.Count, 1).End(-4162).Row
     End If
 
-    srcWb.Close SaveChanges:=False
-    Kill tempPath
-
-    lastRow = dstSh.Cells(dstSh.Rows.Count, 1).End(-4162).Row
-    If lastRow >= 2 Then
-        dstSh.Range(dstSh.Cells(1, 1), dstSh.Cells(lastRow, TOTAL_COLS)).AutoFilter
-    End If
-    dstSh.Activate
-    ActiveWindow.FreezePanes = False
-    ActiveWindow.SplitRow    = 1
-    ActiveWindow.SplitColumn = 0
-    ActiveWindow.FreezePanes = True
-
-    Application.ScreenUpdating = True
-    Application.EnableEvents   = True
-
-    ThisWorkbook.Save
     MsgBox "Импорт завершён. Строк: " & lastRow - 1, vbInformation, "Импорт Реестр опытов"
 End Sub
 
@@ -121,18 +73,3 @@ Sub SaveRegistry()
 
     MsgBox "Отправка завершена. См. лог для деталей.", vbInformation, "Сохранить Реестр опытов"
 End Sub
-
-
-Private Function WaitForFile(path As String, timeoutSec As Long) As Boolean
-    Dim t As Single
-    t = Timer
-    Do While Dir(path) = ""
-        If Timer - t > timeoutSec Then
-            WaitForFile = False
-            Exit Function
-        End If
-        Application.Wait Now + TimeSerial(0, 0, 1)
-    Loop
-    Application.Wait Now + TimeSerial(0, 0, 1)
-    WaitForFile = True
-End Function
