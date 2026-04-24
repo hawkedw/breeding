@@ -115,7 +115,7 @@ def esri_ms_to_dt(ms):
     return EPOCH + datetime.timedelta(milliseconds=int(ms)) + OFFSET
 
 def esri_ms_to_date(ms):
-    """ESRI UTC ms -> date only (no time shift for date-only fields)."""
+    """ESRI UTC ms -> datetime.date (no timezone shift)."""
     return (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
 
 def dt_to_esri(dt):
@@ -126,7 +126,7 @@ def dt_to_esri(dt):
     return int((dt - EPOCH).total_seconds() * 1000)
 
 def date_to_esri(d):
-    """date -> ESRI ms, stored as UTC midnight."""
+    """datetime.date -> ESRI ms (UTC midnight)."""
     dt = datetime.datetime(d.year, d.month, d.day)
     return int((dt - EPOCH).total_seconds() * 1000)
 
@@ -134,11 +134,12 @@ def excel_serial_to_dt(x):
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
 
 def arc_value_to_cell(v, date_only=False):
-    """Convert ArcGIS ms timestamp to datetime or date for Excel cell."""
+    """Convert ArcGIS ms -> value for Excel cell.
+    date_only=True  -> returns datetime.date  (openpyxl stores without time)
+    date_only=False -> returns datetime.datetime (+3h local)
+    """
     if date_only:
-        d = esri_ms_to_date(int(float(v)))
-        # return as datetime at midnight so openpyxl stores it correctly
-        return datetime.datetime(d.year, d.month, d.day)
+        return esri_ms_to_date(int(float(v)))   # datetime.date, no time part
     return esri_ms_to_dt(int(float(v)))
 
 
@@ -244,6 +245,7 @@ def import_registry():
         row[CHILD_GID_COL - 1]  = child_gid
         ws.append(row)
 
+    # apply number formats: date-only cols get DD.MM.YYYY, datetime cols get DD.MM.YYYY HH:MM
     for f in FIELDS_PARENT:
         col = f.get("col")
         if not col or f["type"] != "DATE":
@@ -251,7 +253,7 @@ def import_registry():
         fmt = fmt_date if f["n"] in DATE_ONLY_FIELDS else fmt_dt
         for row_idx in range(2, ws.max_row + 1):
             cell = ws.cell(row=row_idx, column=col)
-            if isinstance(cell.value, datetime.datetime):
+            if cell.value is not None:
                 cell.number_format = fmt
 
     if os.path.exists(TEMP_IMPORT_PATH):
@@ -417,7 +419,10 @@ def submit_registry(wb_path: str):
                     attrs[field_name] = None
                 elif f_type == "DATE":
                     date_only = field_name in DATE_ONLY_FIELDS
-                    if isinstance(v, datetime.datetime):
+                    if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
+                        # pure date from xlsx cell
+                        attrs[field_name] = date_to_esri(v)
+                    elif isinstance(v, datetime.datetime):
                         if date_only:
                             attrs[field_name] = date_to_esri(v.date())
                         else:
