@@ -111,7 +111,12 @@ EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 
 
 def esri_ms_to_dt(ms):
+    """ESRI UTC ms -> local datetime (+3h)."""
     return EPOCH + datetime.timedelta(milliseconds=int(ms)) + OFFSET
+
+def esri_ms_to_date(ms):
+    """ESRI UTC ms -> date only (no time shift for date-only fields)."""
+    return (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
 
 def dt_to_esri(dt):
     if dt.tzinfo is not None:
@@ -120,16 +125,20 @@ def dt_to_esri(dt):
         dt = dt - OFFSET
     return int((dt - EPOCH).total_seconds() * 1000)
 
-def dt_to_excel_serial(dt):
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
-    delta = dt - EXCEL_EPOCH
-    return delta.days + (delta.seconds + delta.microseconds / 1_000_000) / 86400.0
+def date_to_esri(d):
+    """date -> ESRI ms, stored as UTC midnight."""
+    dt = datetime.datetime(d.year, d.month, d.day)
+    return int((dt - EPOCH).total_seconds() * 1000)
 
 def excel_serial_to_dt(x):
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
 
-def arc_value_to_dt(v):
+def arc_value_to_cell(v, date_only=False):
+    """Convert ArcGIS ms timestamp to datetime or date for Excel cell."""
+    if date_only:
+        d = esri_ms_to_date(int(float(v)))
+        # return as datetime at midnight so openpyxl stores it correctly
+        return datetime.datetime(d.year, d.month, d.day)
     return esri_ms_to_dt(int(float(v)))
 
 
@@ -213,7 +222,8 @@ def import_registry():
             if v is None:
                 continue
             if f["type"] == "DATE" and isinstance(v, (int, float)):
-                row[col - 1] = arc_value_to_dt(v)
+                date_only = f["n"] in DATE_ONLY_FIELDS
+                row[col - 1] = arc_value_to_cell(v, date_only=date_only)
             else:
                 row[col - 1] = v
 
@@ -253,42 +263,51 @@ def import_registry():
 
 # ---------- SUBMIT: read dirty rows via win32com, send to ArcGIS ----------
 
-def _attach_workbook(abs_path: str):
-    """Return (xl, wb, opened_here).
+def _attach_workbook(wb_path: str):
+    """Return (xl, wb, opened_here=False).
     Attaches to the already-open Excel instance that called this script via VBA.
-    Matches the workbook by case-insensitive full path comparison.
-    Never calls Workbooks.Open — the file must already be open.
+    Match order:
+      1. exact case-insensitive full path
+      2. fallback: match by filename only (handles different drive/folder layouts)
+    Never calls Workbooks.Open.
     """
     import win32com.client as win32
 
-    xl = None
     try:
         xl = win32.GetActiveObject("Excel.Application")
         log("Attached to running Excel via GetActiveObject")
     except Exception as e:
         log(f"GetActiveObject failed: {e}")
         raise RuntimeError(
-            "Cannot attach to Excel. Make sure the workbook is open and the macro is running."
+            "Cannot attach to Excel. Make sure the workbook is open."
         ) from e
 
-    target = abs_path.lower()
+    target_full = wb_path.lower()
+    target_name = os.path.basename(wb_path).lower()
+
     wb = None
+    by_name = None
     try:
         for book in xl.Workbooks:
             try:
                 full = book.FullName.lower()
                 log(f"  checking open workbook: {book.FullName}")
-                if full == target:
+                if full == target_full:
                     wb = book
                     break
+                if os.path.basename(full) == target_name and by_name is None:
+                    by_name = book
             except Exception:
                 continue
     except Exception as e:
         log(f"Workbooks iteration error: {e}")
         raise
 
+    if wb is None and by_name is not None:
+        log(f"Exact path not matched, using filename match: {by_name.FullName}")
+        wb = by_name
+
     if wb is None:
-        # list what is open to help diagnose
         names = []
         try:
             for book in xl.Workbooks:
@@ -298,7 +317,7 @@ def _attach_workbook(abs_path: str):
         log(f"Open workbooks: {names}")
         raise RuntimeError(
             f"Workbook not found in open Excel instance.\n"
-            f"Expected: {abs_path}\n"
+            f"Expected: {wb_path}\n"
             f"Open: {names}"
         )
 
@@ -315,8 +334,7 @@ def submit_registry(wb_path: str):
         log("ERROR: pywin32 not installed. Run: pip install pywin32")
         return 1
 
-    abs_path = os.path.abspath(wb_path)
-    xl, wb, opened_here = _attach_workbook(abs_path)
+    xl, wb, opened_here = _attach_workbook(wb_path)
 
     try:
         try:
@@ -398,15 +416,20 @@ def submit_registry(wb_path: str):
                 if v in ("", None):
                     attrs[field_name] = None
                 elif f_type == "DATE":
+                    date_only = field_name in DATE_ONLY_FIELDS
                     if isinstance(v, datetime.datetime):
-                        attrs[field_name] = dt_to_esri(v)
+                        if date_only:
+                            attrs[field_name] = date_to_esri(v.date())
+                        else:
+                            attrs[field_name] = dt_to_esri(v)
                     elif isinstance(v, (int, float)):
-                        attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(v)))
+                        dt = excel_serial_to_dt(float(v))
+                        if date_only:
+                            attrs[field_name] = date_to_esri(dt.date())
+                        else:
+                            attrs[field_name] = dt_to_esri(dt)
                     else:
-                        try:
-                            attrs[field_name] = dt_to_esri(excel_serial_to_dt(float(v)))
-                        except Exception:
-                            attrs[field_name] = None
+                        attrs[field_name] = None
                 elif f_type == "NUMBER":
                     try:
                         attrs[field_name] = float(v)
