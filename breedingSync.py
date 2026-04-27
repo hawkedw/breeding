@@ -35,7 +35,7 @@ DIRTY_ALIAS    = "Dirty"
 
 URL_PARENT = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breeding/FeatureServer/0"
 URL_CHILD  = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breeding/FeatureServer/1"
-SORT_FIELD = "created_date"
+SORT_FIELD = "created_date DESC"
 
 FIELDS_PARENT = [
     {"n": "country",          "alias": "Страна",                               "type": "TEXT",   "col": 1},
@@ -64,12 +64,12 @@ CUSTOMER_COLS  = [20, 21, 22, 23]
 CUSTOMER_FIELD = "customer"
 CUSTOMER_ALIAS = "Заказчик опыта"
 
-DIRTY_COL          = 29
-PARENT_GID_COL     = 30
-CHILD_GID_COL      = 31
-PARENT_OID_COL     = 32   # новая техколонка
-CHILD_OID_COL      = 33   # новая техколонка
-TOTAL_COLS         = CHILD_OID_COL
+DIRTY_COL      = 29
+PARENT_GID_COL = 30
+CHILD_GID_COL  = 31
+PARENT_OID_COL = 32
+CHILD_OID_COL  = 33
+TOTAL_COLS     = CHILD_OID_COL
 
 EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
@@ -106,7 +106,7 @@ def get_token() -> str:
 # ---------- DATE HELPERS ----------
 
 EPOCH       = datetime.datetime(1970, 1, 1)
-OFFSET      = datetime.timedelta(hours=3)   # MSK = UTC+3
+OFFSET      = datetime.timedelta(hours=3)
 EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 
 _FMT_DATE     = "dd.mm.yyyy"
@@ -195,14 +195,12 @@ def _attach_workbook(wb_path: str):
 
 
 def _get_oid_field(feats: list) -> str:
-    """Detect objectid field name from first feature (objectid / OBJECTID / FID)."""
     if not feats:
         return "objectid"
     a = feats[0].get("attributes", {})
     for name in ("objectid", "OBJECTID", "FID", "fid"):
         if name in a:
             return name
-    # fallback: first int-looking key that's not globalid
     for k, v in a.items():
         if isinstance(v, int) and "global" not in k.lower():
             return k
@@ -224,7 +222,6 @@ def import_registry(wb_path: str):
     child_oid_field  = _get_oid_field(child_feats)
     log(f"OID fields: parent='{parent_oid_field}' child='{child_oid_field}'")
 
-    # child lookup: parent_globalid -> list of (customer, globalid, objectid)
     child_map: dict[str, list] = {}
     for ft in child_feats:
         a = ft.get("attributes", {})
@@ -235,7 +232,6 @@ def import_registry(wb_path: str):
         if pgid:
             child_map.setdefault(pgid, []).append((cval, cgid, coid))
 
-    # build headers
     col_map = {f["col"]: f["alias"] for f in FIELDS_PARENT}
     headers = []
     for c in range(1, TOTAL_COLS + 1):
@@ -256,7 +252,6 @@ def import_registry(wb_path: str):
         else:
             headers.append("")
 
-    # build data rows
     data = []
     date_log_done = set()
     for ft in parent_feats:
@@ -283,15 +278,12 @@ def import_registry(wb_path: str):
         pgid = a.get("globalid") or a.get("GlobalID") or ""
         poid = a.get(parent_oid_field)
 
-        # customers (first child only for now — each customer col = separate child)
         children = child_map.get(pgid, [])
         for i, cc in enumerate(CUSTOMER_COLS):
             row[cc - 1] = children[i][0] if i < len(children) else ""
 
-        # first child gid/oid
         row[CHILD_GID_COL - 1] = children[0][1] if children else ""
         row[CHILD_OID_COL - 1] = children[0][2] if children else ""
-
         row[DIRTY_COL - 1]      = False
         row[PARENT_GID_COL - 1] = pgid
         row[PARENT_OID_COL - 1] = poid
@@ -302,7 +294,7 @@ def import_registry(wb_path: str):
 
     xl.ScreenUpdating = False
     xl.EnableEvents   = False
-    xl.Calculation    = -4135  # xlCalculationManual
+    xl.Calculation    = -4135
 
     try:
         try:
@@ -342,7 +334,7 @@ def import_registry(wb_path: str):
         log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
 
     finally:
-        xl.Calculation    = -4105  # xlCalculationAutomatic
+        xl.Calculation    = -4105
         xl.ScreenUpdating = True
         xl.EnableEvents   = True
 
@@ -372,11 +364,11 @@ def submit_registry(wb_path: str):
         if h and str(h).strip():
             col_idx[str(h).strip()] = i
 
-    dirty_i      = col_idx.get(DIRTY_ALIAS)
-    pgid_i       = col_idx.get("parent_globalid")
-    poid_i       = col_idx.get("parent_objectid")
-    cgid_i       = col_idx.get("child_globalid")
-    coid_i       = col_idx.get("child_objectid")
+    dirty_i = col_idx.get(DIRTY_ALIAS)
+    pgid_i  = col_idx.get("parent_globalid")
+    poid_i  = col_idx.get("parent_objectid")
+    cgid_i  = col_idx.get("child_globalid")
+    coid_i  = col_idx.get("child_objectid")
 
     if dirty_i is None:
         raise RuntimeError(f"Колонка '{DIRTY_ALIAS}' не найдена")
@@ -389,11 +381,14 @@ def submit_registry(wb_path: str):
     token = get_token()
     updates_parent, adds_parent = [], []
     updates_child,  adds_child  = [], []
+    dirty_rows = []  # excel row numbers (1-based) that are dirty
 
-    for row_data in data:
+    for row_i, row_data in enumerate(data, start=2):
         row = list(row_data)
         if not row[dirty_i]:
             continue
+
+        dirty_rows.append(row_i)
 
         pgid = row[pgid_i] if pgid_i is not None else None
         poid = row[poid_i] if poid_i is not None else None
@@ -442,7 +437,6 @@ def submit_registry(wb_path: str):
             else:
                 p_attrs[field_name] = val
 
-        # parent: update requires objectid; add uses negative placeholder
         if pgid and poid is not None:
             p_attrs["objectid"] = int(poid)
             p_attrs["globalid"] = pgid
@@ -463,9 +457,15 @@ def submit_registry(wb_path: str):
     log(f"Dirty rows: parent updates={len(updates_parent)} adds={len(adds_parent)}, "
         f"child updates={len(updates_child)} adds={len(adds_child)}")
 
+    if not dirty_rows:
+        log("Nothing to submit")
+        return 0
+
     session = requests.Session()
+    ok = True
 
     def _apply(url, updates, adds, label):
+        nonlocal ok
         payload = {"f": "json", "token": token}
         if updates:
             payload["updates"] = json.dumps(updates)
@@ -477,18 +477,29 @@ def submit_registry(wb_path: str):
         r.raise_for_status()
         js = r.json()
         log(f"{label} applyEdits: {js}")
+        # check for top-level error
+        if "error" in js:
+            ok = False
+            return
+        # check per-result errors
+        for key in ("updateResults", "addResults"):
+            for res in js.get(key, []):
+                if not res.get("success", True):
+                    log(f"{label} {key} error: {res}")
+                    ok = False
 
     _apply(URL_PARENT, updates_parent, adds_parent, "PARENT")
     _apply(URL_CHILD,  updates_child,  adds_child,  "CHILD")
 
-    # clear Dirty flags
-    xl.ScreenUpdating = False
-    for row_i, row_data in enumerate(data, start=2):
-        row = list(row_data)
-        if row[dirty_i]:
+    if ok:
+        xl.ScreenUpdating = False
+        for row_i in dirty_rows:
             sh.Cells(row_i, dirty_i + 1).Value = False
-    wb.Save()
-    xl.ScreenUpdating = True
+        wb.Save()
+        xl.ScreenUpdating = True
+        log(f"Dirty cleared for {len(dirty_rows)} rows, workbook saved")
+    else:
+        log("applyEdits had errors — Dirty NOT cleared, workbook NOT saved")
 
     log("submit_registry complete")
     return 0
