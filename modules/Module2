@@ -32,14 +32,14 @@ End Function
 '   1. Запуск Python асинхронно (False) — Excel не блокируется
 '   2. Ожидает флаг через Sleep+DoEvents (освобождает COM для Python)
 Function RunPythonWithWb(action As String) As Long
-    Dim script  As String
-    Dim wbPath  As String
-    Dim logFile As String
-    Dim pidFile As String
-    Dim cmd     As String
-    Dim wsh     As Object
-    Dim waitSec As Long
-    Dim elapsed As Long
+    Dim script   As String
+    Dim wbPath   As String
+    Dim logFile  As String
+    Dim pidFile  As String
+    Dim cmd      As String
+    Dim wsh      As Object
+    Dim maxTicks As Long
+    Dim tick     As Long
 
     script  = ThisWorkbook.Path & "\" & PY_SCRIPT
     wbPath  = ThisWorkbook.FullName
@@ -62,14 +62,16 @@ Function RunPythonWithWb(action As String) As Long
     wsh.Run "cmd.exe /c """ & cmd & """", 0, False
     Set wsh = Nothing
 
-    ' Поллинг через Sleep+DoEvents — COM доступен Python во время ожидания
-    waitSec = 300
-    elapsed = 0
-    Do While elapsed < waitSec
-        Sleep 1000
+    ' Поллинг 200 мс — максимальная задержка 200 мс после завершения Python
+    maxTicks = 1500   ' 1500 x 200ms = 300 sec timeout
+    tick = 0
+    Do While tick < maxTicks
+        Sleep 200
         DoEvents
-        elapsed = elapsed + 1
-        Application.StatusBar = "Ожидание Python... " & elapsed & "s"
+        tick = tick + 1
+        If tick Mod 5 = 0 Then
+            Application.StatusBar = "Ожидание Python... " & (tick \ 5) & "s"
+        End If
         If Dir(pidFile) <> "" Then
             On Error Resume Next
             Kill pidFile
@@ -81,7 +83,7 @@ Function RunPythonWithWb(action As String) As Long
     Loop
 
     Application.StatusBar = False
-    LogVba "RunPythonWithWb TIMEOUT after " & waitSec & "s"
+    LogVba "RunPythonWithWb TIMEOUT after 300s"
     RunPythonWithWb = 1
 End Function
 
