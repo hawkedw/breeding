@@ -71,6 +71,7 @@ TOTAL_COLS     = CHILD_GID_COL
 
 EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
+# Поля, где нужна только дата без времени (посев/уборка)
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
 ALIAS_TO_NAME = {f["alias"]: f["n"] for f in FIELDS_PARENT}
@@ -104,40 +105,74 @@ def get_token() -> str:
 # ---------- DATE HELPERS ----------
 
 EPOCH       = datetime.datetime(1970, 1, 1)
-OFFSET      = datetime.timedelta(hours=3)
+OFFSET      = datetime.timedelta(hours=3)   # MSK = UTC+3
 EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
+
+# Формат для Excel: инвариантный (не зависит от региональных настроек Windows)
+_FMT_DATE      = "dd.mm.yyyy"
+_FMT_DATETIME  = "dd.mm.yyyy hh:mm"
 
 
 def esri_ms_to_dt(ms):
+    """ArcGIS ms UTC -> локальное datetime (UTC+3)."""
     return EPOCH + datetime.timedelta(milliseconds=int(ms)) + OFFSET
 
+
 def dt_to_excel_serial(dt: datetime.datetime) -> float:
+    """datetime (naive, уже локальное) -> Excel serial float."""
     if dt.tzinfo is not None:
         dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     delta = dt - EXCEL_EPOCH
     return delta.days + (delta.seconds + delta.microseconds / 1_000_000) / 86400.0
 
-def arc_ms_to_excel_serial(ms, date_only=False) -> float:
+
+def arc_ms_to_excel_serial(ms, date_only: bool = False) -> float:
+    """
+    ArcGIS ms UTC -> Excel serial.
+    date_only=True: берём только дату (без времени), полночь UTC, без смещения MSK.
+      Это правильно для plantingDate/haverstDate — они хранятся как дата без времени.
+    date_only=False: конвертируем в локальное время MSK (UTC+3).
+    """
     if date_only:
+        # дата UTC, без смещения часового пояса
         d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
         dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
     else:
         dt = esri_ms_to_dt(int(ms))
     return dt_to_excel_serial(dt)
 
-def dt_to_esri(dt):
+
+def dt_to_esri(dt: datetime.datetime) -> int:
+    """Локальное datetime (UTC+3, naive) -> ArcGIS ms UTC."""
     if dt.tzinfo is not None:
         dt = dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
     else:
         dt = dt - OFFSET
     return int((dt - EPOCH).total_seconds() * 1000)
 
-def date_to_esri(d):
+
+def date_to_esri(d: datetime.date) -> int:
+    """date (только дата, без времени) -> ArcGIS ms UTC (полночь UTC)."""
     dt = datetime.datetime(d.year, d.month, d.day)
     return int((dt - EPOCH).total_seconds() * 1000)
 
-def excel_serial_to_dt(x):
+
+def excel_serial_to_dt(x: float) -> datetime.datetime:
+    """Excel serial -> naive datetime."""
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
+
+
+def _set_number_format(rng, fmt: str):
+    """
+    Устанавливает NumberFormat инвариантным способом.
+    Сначала пробуем .NumberFormat (locale-независимый en-US формат).
+    .NumberFormatLocal НЕ используем — он зависит от региональных настроек
+    и ломается при нестандартном разделителе.
+    """
+    try:
+        rng.NumberFormat = fmt
+    except Exception as e:
+        log(f"NumberFormat failed ({e}), skipping format for this range")
 
 
 # ---------- QUERY LAYER ----------
@@ -167,13 +202,14 @@ def query_layer(url, where="1=1", order_by=""):
 # ---------- ATTACH WORKBOOK ----------
 
 def _attach_workbook(wb_path: str):
-    """Attach to already-open workbook via GetActiveObject.
-    Called only after VBA has released the COM lock (Sleep+DoEvents polling).
+    """
+    Attach to already-open workbook via GetActiveObject.
+    Polling with retry — VBA calls DoEvents in a loop before launching Python,
+    so COM should be available within a few seconds.
     """
     import win32com.client as win32
     import time
 
-    # retry a few times in case DoEvents hasn't fully released yet
     last_err = None
     for attempt in range(10):
         try:
@@ -235,7 +271,10 @@ def import_registry(wb_path: str):
     # --- fetch data from ArcGIS BEFORE touching Excel ---
     parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
     log(f"Parent: {len(parent_feats)} features")
-    parent_feats.sort(key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0, reverse=True)
+    parent_feats.sort(
+        key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0,
+        reverse=True
+    )
 
     child_feats = query_layer(URL_CHILD, "1=1", "")
     log(f"Child: {len(child_feats)} records")
@@ -247,8 +286,7 @@ def import_registry(wb_path: str):
         if pgid:
             child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
 
-    # build data rows in memory
-    data = []
+    # --- build header ---
     headers = [""] * TOTAL_COLS
     for f in FIELDS_PARENT:
         col = f.get("col")
@@ -260,9 +298,12 @@ def import_registry(wb_path: str):
     headers[PARENT_GID_COL - 1] = "GlobalID"
     headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
 
+    # --- build data rows in memory ---
+    data = []
     for ft in parent_feats:
         attrs = ft.get("attributes", {})
         row = [""] * TOTAL_COLS
+
         for f in FIELDS_PARENT:
             col = f.get("col")
             if not col:
@@ -271,7 +312,9 @@ def import_registry(wb_path: str):
             if v is None:
                 continue
             if f["type"] == "DATE" and isinstance(v, (int, float)):
-                row[col - 1] = arc_ms_to_excel_serial(v, date_only=(f["n"] in DATE_ONLY_FIELDS))
+                row[col - 1] = arc_ms_to_excel_serial(
+                    v, date_only=(f["n"] in DATE_ONLY_FIELDS)
+                )
             else:
                 row[col - 1] = v
 
@@ -283,6 +326,7 @@ def import_registry(wb_path: str):
                 if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
                     child_gid = cf.get("attributes", {}).get("GlobalID", "")
                     break
+
         for i, c in enumerate(CUSTOMER_COLS):
             if i < len(customers):
                 row[c - 1] = customers[i] if customers[i] is not None else ""
@@ -294,30 +338,49 @@ def import_registry(wb_path: str):
 
     log(f"Data ready: {len(data)} rows. Attaching to Excel...")
 
-    # --- now attach to Excel (VBA is in DoEvents loop = COM available) ---
+    # --- attach to open Excel workbook ---
     xl, wb = _attach_workbook(wb_path)
 
+    xl.ScreenUpdating = False
+    xl.Calculation    = -4135  # xlCalculationManual
+    xl.EnableEvents   = False
+
     try:
-        sh = wb.Worksheets(SHEET_REGISTRY)
-        sh.Cells.Clear()
-    except Exception:
-        sh = wb.Worksheets.Add()
-        sh.Name = SHEET_REGISTRY
+        try:
+            sh = wb.Worksheets(SHEET_REGISTRY)
+            sh.Cells.Clear()
+        except Exception:
+            sh = wb.Worksheets.Add()
+            sh.Name = SHEET_REGISTRY
 
-    sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+        # write header row 1
+        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
 
-    if data:
-        sh.Range(sh.Cells(2, 1), sh.Cells(1 + len(data), TOTAL_COLS)).Value = _to_2d(data)
+        if data:
+            # write data rows 2..N
+            sh.Range(
+                sh.Cells(2, 1),
+                sh.Cells(1 + len(data), TOTAL_COLS)
+            ).Value = _to_2d(data)
 
-        for f in FIELDS_PARENT:
-            col = f.get("col")
-            if not col or f["type"] != "DATE":
-                continue
-            fmt = "dd.mm.yyyy" if f["n"] in DATE_ONLY_FIELDS else "dd.mm.yyyy hh:mm"
-            sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col)).NumberFormat = fmt
+            # apply number formats to DATE columns
+            for f in FIELDS_PARENT:
+                col = f.get("col")
+                if not col or f["type"] != "DATE":
+                    continue
+                fmt = _FMT_DATE if f["n"] in DATE_ONLY_FIELDS else _FMT_DATETIME
+                rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col))
+                _set_number_format(rng, fmt)
+                log(f"  col {col} '{f['n']}' -> NumberFormat='{fmt}'")
 
-    wb.Save()
-    log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
+        wb.Save()
+        log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
+
+    finally:
+        xl.Calculation    = -4105  # xlCalculationAutomatic
+        xl.ScreenUpdating = True
+        xl.EnableEvents   = True
+
     return 0
 
 
@@ -365,6 +428,7 @@ def submit_registry(wb_path: str):
         log("ERROR: 'GlobalID' column not found")
         return 1
 
+    # extend last_row to reliable columns
     last_row = max(
         last_row,
         sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
@@ -404,18 +468,25 @@ def submit_registry(wb_path: str):
             f_type = name_to_type.get(field_name)
             if f_type is None:
                 continue
+
             v = row[c_idx - 1]
+
             if v in ("", None):
                 attrs[field_name] = None
             elif f_type == "DATE":
                 date_only = field_name in DATE_ONLY_FIELDS
                 if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
+                    # COM sometimes returns a date object for date-only cells
                     attrs[field_name] = date_to_esri(v)
                 elif isinstance(v, datetime.datetime):
-                    attrs[field_name] = date_to_esri(v.date()) if date_only else dt_to_esri(v)
+                    attrs[field_name] = (
+                        date_to_esri(v.date()) if date_only else dt_to_esri(v)
+                    )
                 elif isinstance(v, (int, float)):
                     dt = excel_serial_to_dt(float(v))
-                    attrs[field_name] = date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
+                    attrs[field_name] = (
+                        date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
+                    )
                 else:
                     attrs[field_name] = None
             elif f_type == "NUMBER":
@@ -424,7 +495,7 @@ def submit_registry(wb_path: str):
                 except Exception:
                     attrs[field_name] = None
             else:
-                attrs[field_name] = v
+                attrs[field_name] = str(v) if v is not None else None
 
         edits.append({"attributes": attrs})
         row_map.append((r_idx, dirty_col))
