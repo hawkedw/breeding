@@ -10,8 +10,8 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH         = os.path.join(BASE_DIR, "breedingSync.log")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, "breedingSync.log")
 
 
 def log(msg: str):
@@ -38,26 +38,26 @@ URL_CHILD  = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breedin
 SORT_FIELD = "created_date"
 
 FIELDS_PARENT = [
-    {"n": "country",          "alias": "\u0421\u0442\u0440\u0430\u043d\u0430",                         "type": "TEXT",   "col": 1},
-    {"n": "region",           "alias": "\u0420\u0435\u0433\u0438\u043e\u043d",                         "type": "TEXT",   "col": 2},
-    {"n": "site",             "alias": "\u041e\u043f\u044b\u0442\u043d\u0430\u044f \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0430",               "type": "TEXT",   "col": 3},
-    {"n": "devision",         "alias": "\u041e\u0442\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0426\u0421\u0438\u041f\u0421",                "type": "TEXT",   "col": 4},
-    {"n": "crop",             "alias": "\u041a\u0443\u043b\u044c\u0442\u0443\u0440\u0430",                       "type": "TEXT",   "col": 5},
-    {"n": "farm",             "alias": "\u0425\u043e\u0437\u044f\u0439\u0441\u0442\u0432\u043e (\u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u041f\u0425)",   "type": "TEXT",   "col": 6},
-    {"n": "responsable",      "alias": "\u041e\u0442\u0432. \u041b\u0438\u0446\u043e \u0432 \u041f\u0425",                 "type": "TEXT",   "col": 7},
-    {"n": "fieldNumber",      "alias": "\u041d\u043e\u043c\u0435\u0440 \u043f\u043e\u043b\u044f",                     "type": "TEXT",   "col": 8},
-    {"n": "areaHa",           "alias": "\u041f\u043b\u043e\u0449\u0430\u0434\u044c \u043e\u043f\u044b\u0442\u0430, \u0433\u0430",              "type": "NUMBER", "col": 9},
-    {"n": "scheme",           "alias": "\u0421\u0445\u0435\u043c\u0430 \u043e\u043f\u044b\u0442\u0430",                    "type": "TEXT",   "col": 10},
-    {"n": "experimentName",   "alias": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043e\u043f\u044b\u0442\u0430",                 "type": "TEXT",   "col": 11},
-    {"n": "type",             "alias": "\u0422\u0438\u043f \u043e\u043f\u044b\u0442\u0430",                      "type": "TEXT",   "col": 12},
-    {"n": "productPurpose",   "alias": "\u041d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0434\u0443\u043a\u0446\u0438\u0438 \u043e\u043f\u044b\u0442\u0430",     "type": "TEXT",   "col": 13},
-    {"n": "trialPurpose",     "alias": "\u0426\u0435\u043b\u044c, \u0437\u0430\u0434\u0430\u0447\u0430 \u043e\u043f\u044b\u0442\u0430",             "type": "TEXT",   "col": 14},
-    {"n": "status",           "alias": "\u0421\u0442\u0430\u0442\u0443\u0441 \u043e\u043f\u044b\u0442\u0430",                   "type": "TEXT",   "col": 15},
-    {"n": "plantingDate",     "alias": "\u0414\u0430\u0442\u0430 \u043f\u043e\u0441\u0435\u0432\u0430",                    "type": "DATE",   "col": 16},
-    {"n": "haverstDate",      "alias": "\u0414\u0430\u0442\u0430 \u0443\u0431\u043e\u0440\u043a\u0438",                      "type": "DATE",   "col": 17},
-    {"n": "report",           "alias": "\u041e\u0442\u0447\u0451\u0442 (\u0412\u044b\u0432\u043e\u0434\u044b, \u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0430\u0446\u0438\u0438)",   "type": "TEXT",   "col": 18},
-    {"n": "created_date",     "alias": "created_date",                   "type": "DATE",   "col": 27},
-    {"n": "last_edited_date", "alias": "last_edited_date",               "type": "DATE",   "col": 28},
+    {"n": "country",          "alias": "\u0421\u0442\u0440\u0430\u043d\u0430",                       "type": "TEXT",   "col": 1},
+    {"n": "region",           "alias": "\u0420\u0435\u0433\u0438\u043e\u043d",                       "type": "TEXT",   "col": 2},
+    {"n": "site",             "alias": "\u041e\u043f\u044b\u0442\u043d\u0430\u044f \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0430",             "type": "TEXT",   "col": 3},
+    {"n": "devision",         "alias": "\u041e\u0442\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0426\u0421\u0438\u041f\u0421",              "type": "TEXT",   "col": 4},
+    {"n": "crop",             "alias": "\u041a\u0443\u043b\u044c\u0442\u0443\u0440\u0430",                     "type": "TEXT",   "col": 5},
+    {"n": "farm",             "alias": "\u0425\u043e\u0437\u044f\u0439\u0441\u0442\u0432\u043e (\u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u041f\u0425)", "type": "TEXT",   "col": 6},
+    {"n": "responsable",      "alias": "\u041e\u0442\u0432. \u041b\u0438\u0446\u043e \u0432 \u041f\u0425",               "type": "TEXT",   "col": 7},
+    {"n": "fieldNumber",      "alias": "\u041d\u043e\u043c\u0435\u0440 \u043f\u043e\u043b\u044f",                   "type": "TEXT",   "col": 8},
+    {"n": "areaHa",           "alias": "\u041f\u043b\u043e\u0449\u0430\u0434\u044c \u043e\u043f\u044b\u0442\u0430, \u0433\u0430",            "type": "NUMBER", "col": 9},
+    {"n": "scheme",           "alias": "\u0421\u0445\u0435\u043c\u0430 \u043e\u043f\u044b\u0442\u0430",                  "type": "TEXT",   "col": 10},
+    {"n": "experimentName",   "alias": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043e\u043f\u044b\u0442\u0430",               "type": "TEXT",   "col": 11},
+    {"n": "type",             "alias": "\u0422\u0438\u043f \u043e\u043f\u044b\u0442\u0430",                    "type": "TEXT",   "col": 12},
+    {"n": "productPurpose",   "alias": "\u041d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0434\u0443\u043a\u0446\u0438\u0438 \u043e\u043f\u044b\u0442\u0430",   "type": "TEXT",   "col": 13},
+    {"n": "trialPurpose",     "alias": "\u0426\u0435\u043b\u044c, \u0437\u0430\u0434\u0430\u0447\u0430 \u043e\u043f\u044b\u0442\u0430",           "type": "TEXT",   "col": 14},
+    {"n": "status",           "alias": "\u0421\u0442\u0430\u0442\u0443\u0441 \u043e\u043f\u044b\u0442\u0430",                 "type": "TEXT",   "col": 15},
+    {"n": "plantingDate",     "alias": "\u0414\u0430\u0442\u0430 \u043f\u043e\u0441\u0435\u0432\u0430",                  "type": "DATE",   "col": 16},
+    {"n": "haverstDate",      "alias": "\u0414\u0430\u0442\u0430 \u0443\u0431\u043e\u0440\u043a\u0438",                    "type": "DATE",   "col": 17},
+    {"n": "report",           "alias": "\u041e\u0442\u0447\u0451\u0442 (\u0412\u044b\u0432\u043e\u0434\u044b, \u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0430\u0446\u0438\u0438)", "type": "TEXT",   "col": 18},
+    {"n": "created_date",     "alias": "created_date",                 "type": "DATE",   "col": 27},
+    {"n": "last_edited_date", "alias": "last_edited_date",             "type": "DATE",   "col": 28},
 ]
 
 CUSTOMER_COLS  = [20, 21, 22, 23]
@@ -71,7 +71,6 @@ TOTAL_COLS     = CHILD_GID_COL
 
 EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
-# \u041f\u043e\u043b\u044f, \u0433\u0434\u0435 \u043d\u0443\u0436\u043d\u0430 \u0442\u043e\u043b\u044c\u043a\u043e \u0434\u0430\u0442\u0430 \u0431\u0435\u0437 \u0432\u0440\u0435\u043c\u0435\u043d\u0438 (\u043f\u043e\u0441\u0435\u0432/\u0443\u0431\u043e\u0440\u043a\u0430)
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
 ALIAS_TO_NAME = {f["alias"]: f["n"] for f in FIELDS_PARENT}
@@ -108,8 +107,8 @@ EPOCH       = datetime.datetime(1970, 1, 1)
 OFFSET      = datetime.timedelta(hours=3)   # MSK = UTC+3
 EXCEL_EPOCH = datetime.datetime(1899, 12, 30)
 
-_FMT_DATE      = "dd.mm.yyyy"
-_FMT_DATETIME  = "dd.mm.yyyy hh:mm"
+_FMT_DATE     = "dd.mm.yyyy"
+_FMT_DATETIME = "dd.mm.yyyy hh:mm"
 
 
 def esri_ms_to_dt(ms):
@@ -126,7 +125,7 @@ def dt_to_excel_serial(dt: datetime.datetime) -> float:
 def arc_ms_to_excel_serial(ms, date_only: bool = False) -> float:
     if date_only:
         d = (EPOCH + datetime.timedelta(milliseconds=int(ms))).date()
-        dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+        dt = datetime.datetime(d.year, d.month, d.day)
     else:
         dt = esri_ms_to_dt(int(ms))
     return dt_to_excel_serial(dt)
@@ -153,7 +152,7 @@ def _set_number_format(rng, fmt: str):
     try:
         rng.NumberFormat = fmt
     except Exception as e:
-        log(f"NumberFormat failed ({e}), skipping format for this range")
+        log(f"NumberFormat failed ({e})")
 
 
 # ---------- QUERY LAYER ----------
@@ -221,9 +220,7 @@ def _attach_workbook(wb_path: str):
 
     if wb is None:
         names = [b.FullName for b in xl.Workbooks]
-        raise RuntimeError(
-            f"Workbook not found.\nExpected: {wb_path}\nOpen: {names}"
-        )
+        raise RuntimeError(f"Workbook not found.\nExpected: {wb_path}\nOpen: {names}")
 
     log(f"Found open workbook: {wb.FullName}")
     return xl, wb
@@ -287,13 +284,10 @@ def import_registry(wb_path: str):
                 continue
             if f["type"] == "DATE":
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    serial = arc_ms_to_excel_serial(
+                    row[col - 1] = float(arc_ms_to_excel_serial(
                         v, date_only=(f["n"] in DATE_ONLY_FIELDS)
-                    )
-                    row[col - 1] = float(serial)  # явный float — COM не перепутает с str
-                    log(f"  DATE '{f['n']}': ms={v} -> serial={serial:.4f} type={type(serial).__name__}")
+                    ))
                 else:
-                    log(f"  DATE '{f['n']}': unexpected type {type(v).__name__} val={v!r}, writing empty")
                     row[col - 1] = ""
             else:
                 row[col - 1] = v if v is not None else ""
@@ -308,10 +302,7 @@ def import_registry(wb_path: str):
                     break
 
         for i, c in enumerate(CUSTOMER_COLS):
-            if i < len(customers):
-                row[c - 1] = customers[i] if customers[i] is not None else ""
-            else:
-                row[c - 1] = ""
+            row[c - 1] = customers[i] if i < len(customers) and customers[i] is not None else ""
 
         row[DIRTY_COL - 1]      = False
         row[PARENT_GID_COL - 1] = parent_gid
@@ -323,7 +314,7 @@ def import_registry(wb_path: str):
     xl, wb = _attach_workbook(wb_path)
 
     xl.ScreenUpdating = False
-    xl.Calculation    = -4135
+    xl.Calculation    = -4135  # xlCalculationManual
     xl.EnableEvents   = False
 
     try:
@@ -334,28 +325,30 @@ def import_registry(wb_path: str):
             sh = wb.Worksheets.Add()
             sh.Name = SHEET_REGISTRY
 
+        # header
         sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
 
         if data:
-            sh.Range(
-                sh.Cells(2, 1),
-                sh.Cells(1 + len(data), TOTAL_COLS)
-            ).Value = _to_2d(data)
+            n = len(data)
 
+            # 1) NumberFormat BEFORE writing values — prevents Excel from overriding with General
             for f in FIELDS_PARENT:
                 col = f.get("col")
                 if not col or f["type"] != "DATE":
                     continue
                 fmt = _FMT_DATE if f["n"] in DATE_ONLY_FIELDS else _FMT_DATETIME
-                rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + len(data), col))
+                rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + n, col))
                 _set_number_format(rng, fmt)
                 log(f"  col {col} '{f['n']}' -> NumberFormat='{fmt}'")
+
+            # 2) write data
+            sh.Range(sh.Cells(2, 1), sh.Cells(1 + n, TOTAL_COLS)).Value = _to_2d(data)
 
         wb.Save()
         log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
 
     finally:
-        xl.Calculation    = -4105
+        xl.Calculation    = -4105  # xlCalculationAutomatic
         xl.ScreenUpdating = True
         xl.EnableEvents   = True
 
@@ -455,14 +448,10 @@ def submit_registry(wb_path: str):
                 if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
                     attrs[field_name] = date_to_esri(v)
                 elif isinstance(v, datetime.datetime):
-                    attrs[field_name] = (
-                        date_to_esri(v.date()) if date_only else dt_to_esri(v)
-                    )
+                    attrs[field_name] = date_to_esri(v.date()) if date_only else dt_to_esri(v)
                 elif isinstance(v, (int, float)) and not isinstance(v, bool):
                     dt = excel_serial_to_dt(float(v))
-                    attrs[field_name] = (
-                        date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
-                    )
+                    attrs[field_name] = date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
                 else:
                     attrs[field_name] = None
             elif f_type == "NUMBER":
