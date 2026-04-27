@@ -1,7 +1,4 @@
 # breedingSync.py
-# import_registry -> attaches to open workbook via GetActiveObject (like submit_registry)
-# submit_registry -> reads dirty rows directly from workbook via win32com, sends to ArcGIS
-
 import sys, os, json, datetime
 import requests
 
@@ -10,8 +7,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(BASE_DIR, "breedingSync.log")
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH    = os.path.join(BASE_DIR, "breedingSync.log")
+REPORT_PATH = os.path.join(BASE_DIR, "_report.txt")
 
 
 def log(msg: str):
@@ -26,6 +24,14 @@ def log(msg: str):
             f.write(line + "\n")
     except Exception:
         pass
+
+
+def write_report(lines: list):
+    try:
+        with open(REPORT_PATH, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as e:
+        log(f"write_report failed: {e}")
 
 
 # ---------- CONSTANTS ----------
@@ -269,7 +275,7 @@ def import_registry(wb_path: str):
                 date_only = f["n"] in DATE_ONLY_FIELDS
                 serial = arc_ms_to_excel_serial(v, date_only=date_only)
                 if f["n"] not in date_log_done:
-                    log(f"  DATE '{f['n']}': ms={v} -> serial={serial:.4f} type={type(serial).__name__}")
+                    log(f"  DATE '{f['n']}': ms={v} -> serial={serial:.4f}")
                     date_log_done.add(f["n"])
                 row[col - 1] = serial
             else:
@@ -320,18 +326,20 @@ def import_registry(wb_path: str):
                 rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + n, col))
                 try:
                     rng.NumberFormat = fmt
-                except Exception as e:
-                    log(f"  col {col} NumberFormat failed: {e}")
+                except Exception:
+                    pass
                 try:
                     rng.NumberFormatLocal = fmt_local
                 except Exception:
                     pass
-                applied    = rng.NumberFormat
-                first_text = sh.Cells(2, col).Text
-                log(f"  col {col} '{f['n']}' -> NumberFormat='{applied}' cell='{first_text}'")
 
         wb.Save()
-        log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
+        log(f"import_registry complete: {len(data)} rows written")
+        write_report([
+            f"Импорт завершён.",
+            f"Загружено записей: {len(data)}",
+            f"Записей дочерней таблицы: {len(child_feats)}",
+        ])
 
     finally:
         xl.Calculation    = -4105
@@ -356,6 +364,7 @@ def submit_registry(wb_path: str):
     last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
     if last_row < 2:
         log("Нет данных для отправки")
+        write_report(["Нет данных для отправки."])
         return 0
 
     hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
@@ -376,12 +385,13 @@ def submit_registry(wb_path: str):
     data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
     if not data:
         log("Нет строк данных")
+        write_report(["Нет строк данных."])
         return 0
 
     token = get_token()
     updates_parent, adds_parent = [], []
     updates_child,  adds_child  = [], []
-    dirty_rows = []  # excel row numbers (1-based) that are dirty
+    dirty_rows = []
 
     for row_i, row_data in enumerate(data, start=2):
         row = list(row_data)
@@ -459,10 +469,12 @@ def submit_registry(wb_path: str):
 
     if not dirty_rows:
         log("Nothing to submit")
+        write_report(["Нет изменённых строк для отправки."])
         return 0
 
     session = requests.Session()
     ok = True
+    errors = []
 
     def _apply(url, updates, adds, label):
         nonlocal ok
@@ -477,16 +489,15 @@ def submit_registry(wb_path: str):
         r.raise_for_status()
         js = r.json()
         log(f"{label} applyEdits: {js}")
-        # check for top-level error
         if "error" in js:
             ok = False
+            errors.append(f"{label}: {js['error'].get('message', js['error'])}")
             return
-        # check per-result errors
         for key in ("updateResults", "addResults"):
             for res in js.get(key, []):
                 if not res.get("success", True):
-                    log(f"{label} {key} error: {res}")
                     ok = False
+                    errors.append(f"{label} {key}: {res.get('error', res)}")
 
     _apply(URL_PARENT, updates_parent, adds_parent, "PARENT")
     _apply(URL_CHILD,  updates_child,  adds_child,  "CHILD")
@@ -498,11 +509,20 @@ def submit_registry(wb_path: str):
         wb.Save()
         xl.ScreenUpdating = True
         log(f"Dirty cleared for {len(dirty_rows)} rows, workbook saved")
+        write_report([
+            f"Сохранение завершено.",
+            f"Отправлено записей: {len(dirty_rows)}",
+            f"  Обновлено parent: {len(updates_parent)}, добавлено: {len(adds_parent)}",
+            f"  Обновлено child: {len(updates_child)}, добавлено: {len(adds_child)}",
+        ])
     else:
-        log("applyEdits had errors — Dirty NOT cleared, workbook NOT saved")
+        log("applyEdits had errors — Dirty NOT cleared")
+        write_report(
+            ["Ошибка при отправке. Изменения НЕ сохранены."] + errors
+        )
 
     log("submit_registry complete")
-    return 0
+    return 0 if ok else 1
 
 
 # ---------- MAIN ----------
@@ -530,6 +550,7 @@ def main():
         import traceback
         log(f"FATAL: {e}")
         log(traceback.format_exc())
+        write_report([f"Критическая ошибка:", str(e)])
         sys.exit(1)
 
 
