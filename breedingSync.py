@@ -1,5 +1,5 @@
 # breedingSync.py
-import sys, os, json, datetime
+import sys, os, json, datetime, time
 import requests
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -32,6 +32,29 @@ def write_report(lines: list):
             f.write("\n".join(lines))
     except Exception as e:
         log(f"write_report failed: {e}")
+
+
+# ---------- COM RETRY ----------
+# 0x800AC472 = VBA_E_IGNORE  (Excel busy / in modal state)
+# 0x80010001 = RPC_E_CALL_REJECTED  (COM call rejected)
+_COM_RETRY_CODES = {-2146777998, -2147418111, -2147418110, -2146959355}
+
+def com_retry(fn, retries=8, delay=0.5):
+    """Call fn(); retry on Excel-busy COM errors up to `retries` times."""
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            hresult = getattr(e, 'hresult', None)
+            if hresult is None:
+                args = getattr(e, 'args', ())
+                hresult = args[0] if args else None
+            if isinstance(hresult, int) and hresult in _COM_RETRY_CODES:
+                if attempt < retries - 1:
+                    log(f"COM busy (0x{hresult & 0xFFFFFFFF:08X}), retry {attempt+1}/{retries} in {delay}s")
+                    time.sleep(delay)
+                    continue
+            raise
 
 
 # ---------- CONSTANTS ----------
@@ -213,6 +236,16 @@ def _get_oid_field(feats: list) -> str:
     return "objectid"
 
 
+def _set_xl_props(xl, screen=None, calc=None, events=None):
+    """Set Excel application properties with retry on COM-busy errors."""
+    if screen is not None:
+        com_retry(lambda: setattr(xl, 'ScreenUpdating', screen))
+    if calc is not None:
+        com_retry(lambda: setattr(xl, 'Calculation', calc))
+    if events is not None:
+        com_retry(lambda: setattr(xl, 'EnableEvents', events))
+
+
 # ---------- IMPORT ----------
 
 def import_registry(wb_path: str):
@@ -298,9 +331,7 @@ def import_registry(wb_path: str):
     log(f"Data ready: {len(data)} rows. Attaching to Excel...")
     wb, xl = _attach_workbook(wb_path)
 
-    xl.ScreenUpdating = False
-    xl.EnableEvents   = False
-    xl.Calculation    = -4135
+    _set_xl_props(xl, screen=False, events=False, calc=-4135)
 
     try:
         try:
@@ -333,7 +364,7 @@ def import_registry(wb_path: str):
                 except Exception:
                     pass
 
-        wb.Save()
+        com_retry(lambda: wb.Save())
         log(f"import_registry complete: {len(data)} rows written")
         write_report([
             f"Импорт завершён.",
@@ -342,9 +373,7 @@ def import_registry(wb_path: str):
         ])
 
     finally:
-        xl.Calculation    = -4105
-        xl.ScreenUpdating = True
-        xl.EnableEvents   = True
+        _set_xl_props(xl, calc=-4105, screen=True, events=True)
 
     return 0
 
@@ -503,11 +532,11 @@ def submit_registry(wb_path: str):
     _apply(URL_CHILD,  updates_child,  adds_child,  "CHILD")
 
     if ok:
-        xl.ScreenUpdating = False
+        _set_xl_props(xl, screen=False)
         for row_i in dirty_rows:
             sh.Cells(row_i, dirty_i + 1).Value = False
-        wb.Save()
-        xl.ScreenUpdating = True
+        com_retry(lambda: wb.Save())
+        _set_xl_props(xl, screen=True)
         log(f"Dirty cleared for {len(dirty_rows)} rows, workbook saved")
         write_report([
             f"Сохранение завершено.",
