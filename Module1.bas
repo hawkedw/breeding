@@ -11,33 +11,20 @@ Private Sub RunPythonWithWb(ByVal action As String)
     Dim py      As String
     Dim script  As String
     Dim wb      As String
-    Dim baseDir As String
-    Dim outLog  As String
-    Dim errLog  As String
     Dim cmd     As String
 
     ' --- пути (поправь py если Python в другом месте) ---
-    py      = "C:\Python311\python.exe"
-    baseDir = ThisWorkbook.Path
-    script  = baseDir & "\breedingSync.py"
-    wb      = ThisWorkbook.FullName
-
-    outLog  = baseDir & "\" & action & "_stdout.log"
-    errLog  = baseDir & "\" & action & "_stderr.log"
+    py     = "C:\Python311\python.exe"
+    script = ThisWorkbook.Path & "\breedingSync.py"
+    wb     = ThisWorkbook.FullName
     ' ---------------------------------------------------
 
-    ' cmd /c нужен чтобы работали >> редиректы
-    ' внешние кавычки вокруг всей команды обязательны для cmd /c
-    cmd = "cmd.exe /c " & Chr(34) & _
-          Chr(34) & py & Chr(34) & " " & _
+    cmd = Chr(34) & py & Chr(34) & " " & _
           Chr(34) & script & Chr(34) & " " & _
           action & " " & _
-          Chr(34) & wb & Chr(34) & _
-          " 1>>" & Chr(34) & outLog & Chr(34) & _
-          " 2>>" & Chr(34) & errLog & Chr(34) & _
-          Chr(34)
+          Chr(34) & wb & Chr(34)
 
-    Shell cmd, vbHide
+    Shell "cmd.exe /c " & cmd, vbHide
 End Sub
 
 
@@ -48,5 +35,9 @@ Public Sub ImportRegistry()
 End Sub
 
 Public Sub SubmitRegistry()
+    RunPythonWithWb "submit_registry"
+End Sub
+
+Public Sub SaveRegistry()
     RunPythonWithWb "submit_registry"
 End Sub
