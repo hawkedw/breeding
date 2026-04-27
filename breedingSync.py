@@ -30,7 +30,7 @@ def log(msg: str):
 
 # ---------- CONSTANTS ----------
 
-SHEET_REGISTRY = "\u0420\u0435\u0435\u0441\u0442\u0440 \u043e\u043f\u044b\u0442\u043e\u0432"
+SHEET_REGISTRY = "Реестр опытов"
 DIRTY_ALIAS    = "Dirty"
 
 URL_PARENT = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breeding/FeatureServer/0"
@@ -38,31 +38,31 @@ URL_CHILD  = "https://maps.ekoniva-apk.org/arcgis/rest/services/breeding/breedin
 SORT_FIELD = "created_date"
 
 FIELDS_PARENT = [
-    {"n": "country",          "alias": "\u0421\u0442\u0440\u0430\u043d\u0430",                       "type": "TEXT",   "col": 1},
-    {"n": "region",           "alias": "\u0420\u0435\u0433\u0438\u043e\u043d",                       "type": "TEXT",   "col": 2},
-    {"n": "site",             "alias": "\u041e\u043f\u044b\u0442\u043d\u0430\u044f \u043f\u043b\u043e\u0449\u0430\u0434\u043a\u0430",             "type": "TEXT",   "col": 3},
-    {"n": "devision",         "alias": "\u041e\u0442\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0426\u0421\u0438\u041f\u0421",              "type": "TEXT",   "col": 4},
-    {"n": "crop",             "alias": "\u041a\u0443\u043b\u044c\u0442\u0443\u0440\u0430",                     "type": "TEXT",   "col": 5},
-    {"n": "farm",             "alias": "\u0425\u043e\u0437\u044f\u0439\u0441\u0442\u0432\u043e (\u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u041f\u0425)", "type": "TEXT",   "col": 6},
-    {"n": "responsable",      "alias": "\u041e\u0442\u0432. \u041b\u0438\u0446\u043e \u0432 \u041f\u0425",               "type": "TEXT",   "col": 7},
-    {"n": "fieldNumber",      "alias": "\u041d\u043e\u043c\u0435\u0440 \u043f\u043e\u043b\u044f",                   "type": "TEXT",   "col": 8},
-    {"n": "areaHa",           "alias": "\u041f\u043b\u043e\u0449\u0430\u0434\u044c \u043e\u043f\u044b\u0442\u0430, \u0433\u0430",            "type": "NUMBER", "col": 9},
-    {"n": "scheme",           "alias": "\u0421\u0445\u0435\u043c\u0430 \u043e\u043f\u044b\u0442\u0430",                  "type": "TEXT",   "col": 10},
-    {"n": "experimentName",   "alias": "\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u043e\u043f\u044b\u0442\u0430",               "type": "TEXT",   "col": 11},
-    {"n": "type",             "alias": "\u0422\u0438\u043f \u043e\u043f\u044b\u0442\u0430",                    "type": "TEXT",   "col": 12},
-    {"n": "productPurpose",   "alias": "\u041d\u0430\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u043f\u0440\u043e\u0434\u0443\u043a\u0446\u0438\u0438 \u043e\u043f\u044b\u0442\u0430",   "type": "TEXT",   "col": 13},
-    {"n": "trialPurpose",     "alias": "\u0426\u0435\u043b\u044c, \u0437\u0430\u0434\u0430\u0447\u0430 \u043e\u043f\u044b\u0442\u0430",           "type": "TEXT",   "col": 14},
-    {"n": "status",           "alias": "\u0421\u0442\u0430\u0442\u0443\u0441 \u043e\u043f\u044b\u0442\u0430",                 "type": "TEXT",   "col": 15},
-    {"n": "plantingDate",     "alias": "\u0414\u0430\u0442\u0430 \u043f\u043e\u0441\u0435\u0432\u0430",                  "type": "DATE",   "col": 16},
-    {"n": "haverstDate",      "alias": "\u0414\u0430\u0442\u0430 \u0443\u0431\u043e\u0440\u043a\u0438",                    "type": "DATE",   "col": 17},
-    {"n": "report",           "alias": "\u041e\u0442\u0447\u0451\u0442 (\u0412\u044b\u0432\u043e\u0434\u044b, \u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0430\u0446\u0438\u0438)", "type": "TEXT",   "col": 18},
-    {"n": "created_date",     "alias": "created_date",                 "type": "DATE",   "col": 27},
-    {"n": "last_edited_date", "alias": "last_edited_date",             "type": "DATE",   "col": 28},
+    {"n": "country",          "alias": "Страна",                               "type": "TEXT",   "col": 1},
+    {"n": "region",           "alias": "Регион",                               "type": "TEXT",   "col": 2},
+    {"n": "site",             "alias": "Опытная площадка",                     "type": "TEXT",   "col": 3},
+    {"n": "devision",         "alias": "Отделение ЦСиПС",                      "type": "TEXT",   "col": 4},
+    {"n": "crop",             "alias": "Культура",                             "type": "TEXT",   "col": 5},
+    {"n": "farm",             "alias": "Хозяйство (подразделение ПХ)",         "type": "TEXT",   "col": 6},
+    {"n": "responsable",      "alias": "Отв. Лицо в ПХ",                       "type": "TEXT",   "col": 7},
+    {"n": "fieldNumber",      "alias": "Номер поля",                           "type": "TEXT",   "col": 8},
+    {"n": "areaHa",           "alias": "Площадь опыта, га",                    "type": "NUMBER", "col": 9},
+    {"n": "scheme",           "alias": "Схема опыта",                          "type": "TEXT",   "col": 10},
+    {"n": "experimentName",   "alias": "Название опыта",                       "type": "TEXT",   "col": 11},
+    {"n": "type",             "alias": "Тип опыта",                            "type": "TEXT",   "col": 12},
+    {"n": "productPurpose",   "alias": "Назначение продукции опыта",           "type": "TEXT",   "col": 13},
+    {"n": "trialPurpose",     "alias": "Цель, задача опыта",                   "type": "TEXT",   "col": 14},
+    {"n": "status",           "alias": "Статус опыта",                         "type": "TEXT",   "col": 15},
+    {"n": "plantingDate",     "alias": "Дата посева",                          "type": "DATE",   "col": 16},
+    {"n": "haverstDate",      "alias": "Дата уборки",                          "type": "DATE",   "col": 17},
+    {"n": "report",           "alias": "Отчёт (Выводы, рекомендации)",         "type": "TEXT",   "col": 18},
+    {"n": "created_date",     "alias": "created_date",                         "type": "DATE",   "col": 27},
+    {"n": "last_edited_date", "alias": "last_edited_date",                     "type": "DATE",   "col": 28},
 ]
 
 CUSTOMER_COLS  = [20, 21, 22, 23]
 CUSTOMER_FIELD = "customer"
-CUSTOMER_ALIAS = "\u0417\u0430\u043a\u0430\u0437\u0447\u0438\u043a \u043e\u043f\u044b\u0442\u0430"
+CUSTOMER_ALIAS = "Заказчик опыта"
 
 DIRTY_COL      = 29
 PARENT_GID_COL = 30
@@ -87,7 +87,7 @@ def get_token() -> str:
     username = os.environ.get(ARC_USERNAME_ENV)
     password = os.environ.get(ARC_PASSWORD_ENV)
     if not username or not password:
-        raise RuntimeError(f"\u041d\u0435 \u0437\u0430\u0434\u0430\u043d\u044b {ARC_USERNAME_ENV}/{ARC_PASSWORD_ENV}")
+        raise RuntimeError(f"Не заданы {ARC_USERNAME_ENV}/{ARC_PASSWORD_ENV}")
     payload = {
         "username": username, "password": password,
         "client": "referer", "referer": "https://maps.ekoniva-apk.org",
@@ -163,159 +163,120 @@ def query_layer(url, where="1=1", order_by=""):
     feats, offset, page_size = [], 0, 2000
     while True:
         params = {"where": where, "outFields": "*", "f": "json",
-                  "token": token, "resultOffset": offset, "resultRecordCount": page_size}
+                  "resultOffset": offset, "resultRecordCount": page_size,
+                  "token": token}
         if order_by:
-            params["orderByFields"] = f"{order_by} DESC"
+            params["orderByFields"] = order_by
         r = session.get(url + "/query", params=params, timeout=60)
+        r.raise_for_status()
         js = r.json()
         if "error" in js:
-            raise RuntimeError(f"ArcGIS error: {js['error']}")
-        page = js.get("features", [])
-        feats.extend(page)
-        log(f"query_layer offset={offset}: got {len(page)}, total {len(feats)}")
-        if not js.get("exceededTransferLimit") or not page:
+            raise RuntimeError(js["error"])
+        chunk = js.get("features", [])
+        feats.extend(chunk)
+        log(f"query_layer offset={offset}: got {len(chunk)}, total {len(feats)}")
+        if len(chunk) < page_size:
             break
-        offset += len(page)
+        offset += page_size
     return feats
 
 
-# ---------- ATTACH WORKBOOK ----------
+# ---------- HELPERS ----------
+
+def _to_2d(rows):
+    return [list(r) for r in rows]
+
 
 def _attach_workbook(wb_path: str):
     import win32com.client as win32
-    import time
-
-    last_err = None
-    for attempt in range(10):
-        try:
-            xl = win32.GetActiveObject("Excel.Application")
-            break
-        except Exception as e:
-            last_err = e
-            log(f"GetActiveObject attempt {attempt+1} failed: {e}, retrying...")
-            time.sleep(1)
-    else:
-        raise RuntimeError(f"Cannot attach to Excel: {last_err}")
-
-    target_full = wb_path.lower()
-    target_name = os.path.basename(wb_path).lower()
-
-    wb = None
-    by_name = None
-    for book in xl.Workbooks:
-        try:
-            full = book.FullName.lower()
-            log(f"  checking open workbook: {book.FullName}")
-            if full == target_full:
-                wb = book
-                break
-            if os.path.basename(full) == target_name and by_name is None:
-                by_name = book
-        except Exception:
-            continue
-
-    if wb is None and by_name is not None:
-        log(f"Exact path not matched, using filename match: {by_name.FullName}")
-        wb = by_name
-
-    if wb is None:
-        names = [b.FullName for b in xl.Workbooks]
-        raise RuntimeError(f"Workbook not found.\nExpected: {wb_path}\nOpen: {names}")
-
-    log(f"Found open workbook: {wb.FullName}")
-    return xl, wb
+    xl = win32.Dispatch("Excel.Application")
+    abs_path = os.path.abspath(wb_path)
+    for wb in xl.Workbooks:
+        log(f"  checking open workbook: {wb.FullName}")
+        if os.path.abspath(wb.FullName) == abs_path:
+            log(f"Found open workbook: {wb.FullName}")
+            return wb, xl
+    raise RuntimeError(f"Книга не открыта в Excel: {wb_path}")
 
 
 # ---------- IMPORT ----------
 
-def _to_2d(rows):
-    return tuple(tuple(r) for r in rows)
-
-
 def import_registry(wb_path: str):
     log("=== import_registry START ===")
 
-    try:
-        import win32com.client as win32
-    except ImportError:
-        log("ERROR: pywin32 not installed")
-        return 1
-
-    parent_feats = query_layer(URL_PARENT, "1=1", SORT_FIELD)
+    parent_feats = query_layer(URL_PARENT, order_by=SORT_FIELD)
     log(f"Parent: {len(parent_feats)} features")
-    parent_feats.sort(
-        key=lambda f: f.get("attributes", {}).get(SORT_FIELD) or 0,
-        reverse=True
-    )
 
-    child_feats = query_layer(URL_CHILD, "1=1", "")
+    child_feats = query_layer(URL_CHILD)
     log(f"Child: {len(child_feats)} records")
 
-    child_index = {}
-    for cf in child_feats:
-        attrs = cf.get("attributes", {})
-        pgid = attrs.get("parentglobalid")
+    # build child lookup: parent_globalid -> list of customer values
+    child_map: dict[str, list] = {}
+    for ft in child_feats:
+        a = ft.get("attributes", {})
+        pgid = a.get("parentglobalid") or a.get("ParentGlobalID") or a.get("parent_globalid")
+        cval = a.get(CUSTOMER_FIELD, "")
         if pgid:
-            child_index.setdefault(pgid, []).append(attrs.get(CUSTOMER_FIELD))
+            child_map.setdefault(pgid, []).append(cval or "")
 
-    headers = [""] * TOTAL_COLS
-    for f in FIELDS_PARENT:
-        col = f.get("col")
-        if col:
-            headers[col - 1] = f["alias"]
-    for c in CUSTOMER_COLS:
-        headers[c - 1] = CUSTOMER_ALIAS
-    headers[DIRTY_COL - 1]      = DIRTY_ALIAS
-    headers[PARENT_GID_COL - 1] = "GlobalID"
-    headers[CHILD_GID_COL - 1]  = "ChildGlobalID"
+    # build headers
+    col_map = {f["col"]: f["alias"] for f in FIELDS_PARENT}
+    headers = []
+    for c in range(1, TOTAL_COLS + 1):
+        if c in col_map:
+            headers.append(col_map[c])
+        elif c in CUSTOMER_COLS:
+            headers.append(CUSTOMER_ALIAS)
+        elif c == DIRTY_COL:
+            headers.append(DIRTY_ALIAS)
+        elif c == PARENT_GID_COL:
+            headers.append("parent_globalid")
+        elif c == CHILD_GID_COL:
+            headers.append("child_globalid")
+        else:
+            headers.append("")
 
+    # build data rows
     data = []
+    date_log_done = set()
     for ft in parent_feats:
-        attrs = ft.get("attributes", {})
-        row = [None] * TOTAL_COLS
+        a = ft.get("attributes", {})
+        row = [""] * TOTAL_COLS
 
         for f in FIELDS_PARENT:
             col = f.get("col")
             if not col:
                 continue
-            v = attrs.get(f["n"])
+            v = a.get(f["n"])
             if v is None:
-                row[col - 1] = ""
                 continue
-            if f["type"] == "DATE":
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    row[col - 1] = float(arc_ms_to_excel_serial(
-                        v, date_only=(f["n"] in DATE_ONLY_FIELDS)
-                    ))
-                else:
-                    row[col - 1] = ""
+            if f["type"] == "DATE" and isinstance(v, (int, float)):
+                date_only = f["n"] in DATE_ONLY_FIELDS
+                serial = arc_ms_to_excel_serial(v, date_only=date_only)
+                if f["n"] not in date_log_done:
+                    log(f"  DATE '{f['n']}': ms={v} -> serial={serial:.4f} type={type(serial).__name__}")
+                    date_log_done.add(f["n"])
+                row[col - 1] = serial
             else:
-                row[col - 1] = v if v is not None else ""
+                row[col - 1] = v
 
-        parent_gid = attrs.get("GlobalID", "")
-        customers  = child_index.get(parent_gid, [])
-        child_gid  = ""
-        if customers:
-            for cf in child_feats:
-                if cf.get("attributes", {}).get("parentglobalid") == parent_gid:
-                    child_gid = cf.get("attributes", {}).get("GlobalID", "")
-                    break
-
-        for i, c in enumerate(CUSTOMER_COLS):
-            row[c - 1] = customers[i] if i < len(customers) and customers[i] is not None else ""
+        # customers
+        pgid = a.get("globalid") or a.get("GlobalID")
+        customers = child_map.get(pgid, [])
+        for i, cc in enumerate(CUSTOMER_COLS):
+            row[cc - 1] = customers[i] if i < len(customers) else ""
 
         row[DIRTY_COL - 1]      = False
-        row[PARENT_GID_COL - 1] = parent_gid
-        row[CHILD_GID_COL - 1]  = child_gid
+        row[PARENT_GID_COL - 1] = pgid or ""
+        row[CHILD_GID_COL - 1]  = ""
         data.append(row)
 
     log(f"Data ready: {len(data)} rows. Attaching to Excel...")
-
-    xl, wb = _attach_workbook(wb_path)
+    wb, xl = _attach_workbook(wb_path)
 
     xl.ScreenUpdating = False
-    xl.Calculation    = -4135  # xlCalculationManual
     xl.EnableEvents   = False
+    xl.Calculation    = -4135  # xlCalculationManual
 
     try:
         try:
@@ -331,18 +292,29 @@ def import_registry(wb_path: str):
         if data:
             n = len(data)
 
-            # 1) NumberFormat BEFORE writing values — prevents Excel from overriding with General
+            # 1) write data block first (milkQuality_Forms pattern)
+            sh.Range(sh.Cells(2, 1), sh.Cells(1 + n, TOTAL_COLS)).Value = _to_2d(data)
+
+            # 2) NumberFormat + NumberFormatLocal AFTER writing
             for f in FIELDS_PARENT:
                 col = f.get("col")
                 if not col or f["type"] != "DATE":
                     continue
-                fmt = _FMT_DATE if f["n"] in DATE_ONLY_FIELDS else _FMT_DATETIME
+                date_only = f["n"] in DATE_ONLY_FIELDS
+                fmt       = _FMT_DATE     if date_only else _FMT_DATETIME
+                fmt_local = "ДД.ММ.ГГГГ" if date_only else "ДД.ММ.ГГГГ чч:мм"
                 rng = sh.Range(sh.Cells(2, col), sh.Cells(1 + n, col))
-                _set_number_format(rng, fmt)
-                log(f"  col {col} '{f['n']}' -> NumberFormat='{fmt}'")
-
-            # 2) write data
-            sh.Range(sh.Cells(2, 1), sh.Cells(1 + n, TOTAL_COLS)).Value = _to_2d(data)
+                try:
+                    rng.NumberFormat = fmt
+                except Exception as e:
+                    log(f"  col {col} NumberFormat failed: {e}")
+                try:
+                    rng.NumberFormatLocal = fmt_local
+                except Exception:
+                    pass
+                applied    = rng.NumberFormat
+                first_text = sh.Cells(2, col).Text
+                log(f"  col {col} '{f['n']}' -> NumberFormat='{applied}' cell='{first_text}'")
 
         wb.Save()
         log(f"import_registry complete: {len(data)} rows written to {wb.FullName}")
@@ -359,174 +331,166 @@ def import_registry(wb_path: str):
 
 def submit_registry(wb_path: str):
     log("=== submit_registry START ===")
-
-    try:
-        import win32com.client as win32
-    except ImportError:
-        log("ERROR: pywin32 not installed")
-        return 1
-
-    xl, wb = _attach_workbook(wb_path)
+    wb, xl = _attach_workbook(wb_path)
 
     try:
         sh = wb.Worksheets(SHEET_REGISTRY)
     except Exception:
-        log(f"ERROR: sheet '{SHEET_REGISTRY}' not found")
-        return 1
+        raise RuntimeError(f"Лист '{SHEET_REGISTRY}' не найден")
 
-    last_col = sh.Cells(1, sh.Columns.Count).End(-4159).Column
-    last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
-
+    last_col = TOTAL_COLS
+    last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row  # xlUp
     if last_row < 2:
-        log("No data rows")
+        log("Нет данных для отправки")
         return 0
 
     hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
 
-    def col_idx(name):
-        for i, h in enumerate(hdr_vals):
-            if h == name:
-                return i + 1
-        return 0
+    col_idx: dict[str, int] = {}
+    for i, h in enumerate(hdr_vals):
+        if h and str(h).strip():
+            col_idx[str(h).strip()] = i
 
-    dirty_col = col_idx(DIRTY_ALIAS)
-    gid_col   = col_idx("GlobalID")
-
-    if not dirty_col:
-        log("ERROR: 'Dirty' column not found")
-        return 1
-    if not gid_col:
-        log("ERROR: 'GlobalID' column not found")
-        return 1
-
-    last_row = max(
-        last_row,
-        sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row,
-        sh.Cells(sh.Rows.Count, gid_col).End(-4162).Row,
-    )
+    dirty_i = col_idx.get(DIRTY_ALIAS)
+    if dirty_i is None:
+        raise RuntimeError(f"Колонка '{DIRTY_ALIAS}' не найдена")
 
     data = sh.Range(sh.Cells(2, 1), sh.Cells(last_row, last_col)).Value
     if not data:
-        log("No data")
+        log("Нет строк данных")
         return 0
 
-    name_to_type = {f["n"]: f["type"] for f in FIELDS_PARENT}
-    token   = get_token()
-    edits   = []
-    row_map = []
+    token = get_token()
+    updates_parent, adds_parent = [], []
+    updates_child,  adds_child  = [], []
 
-    for r_idx, row in enumerate(data, start=2):
-        row = list(row)
-        if not row[dirty_col - 1]:
+    for row_data in data:
+        row = list(row_data)
+        if not row[dirty_i]:
             continue
 
-        parent_gid = row[gid_col - 1]
-        if not parent_gid:
-            log(f"Row {r_idx}: no GlobalID, skip")
-            continue
+        pgid = row[col_idx.get("parent_globalid", -1)] if "parent_globalid" in col_idx else None
+        cgid = row[col_idx.get("child_globalid",  -1)] if "child_globalid"  in col_idx else None
 
-        attrs = {"GlobalID": str(parent_gid).strip()}
+        p_attrs: dict = {}
+        c_attrs: dict = {}
 
-        for c_idx, alias in enumerate(hdr_vals, start=1):
-            if not alias or alias == DIRTY_ALIAS:
+        for alias, fi in col_idx.items():
+            field_name = ALIAS_TO_NAME.get(alias)
+            if not field_name:
                 continue
-            if alias in ("GlobalID", "ChildGlobalID"):
-                continue
-            field_name = ALIAS_TO_NAME.get(alias, alias)
-            if field_name.lower() in SYS_SKIP:
-                continue
-            f_type = name_to_type.get(field_name)
-            if f_type is None:
+            if field_name in SYS_SKIP:
                 continue
 
-            v = row[c_idx - 1]
+            raw = row[fi]
+            excel_col = fi + 1
 
-            if v in ("", None):
-                attrs[field_name] = None
-            elif f_type == "DATE":
+            if excel_col not in EDITABLE_COLS:
+                continue
+
+            f_type = next((f["type"] for f in FIELDS_PARENT if f["n"] == field_name), "TEXT")
+
+            if f_type == "DATE":
                 date_only = field_name in DATE_ONLY_FIELDS
-                if isinstance(v, datetime.date) and not isinstance(v, datetime.datetime):
-                    attrs[field_name] = date_to_esri(v)
-                elif isinstance(v, datetime.datetime):
-                    attrs[field_name] = date_to_esri(v.date()) if date_only else dt_to_esri(v)
-                elif isinstance(v, (int, float)) and not isinstance(v, bool):
-                    dt = excel_serial_to_dt(float(v))
-                    attrs[field_name] = date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
+                if raw is None or raw == "":
+                    val = None
+                elif isinstance(raw, (int, float)):
+                    dt = excel_serial_to_dt(float(raw))
+                    val = date_to_esri(dt.date()) if date_only else dt_to_esri(dt)
+                elif isinstance(raw, datetime.datetime):
+                    val = date_to_esri(raw.date()) if date_only else dt_to_esri(raw)
+                elif isinstance(raw, datetime.date):
+                    val = date_to_esri(raw)
                 else:
-                    attrs[field_name] = None
+                    val = None
             elif f_type == "NUMBER":
-                try:
-                    attrs[field_name] = float(v)
-                except Exception:
-                    attrs[field_name] = None
+                val = float(raw) if raw not in (None, "") else None
+            elif f_type in ("INT", "OID"):
+                val = int(raw) if raw not in (None, "") else None
             else:
-                attrs[field_name] = str(v) if v is not None else None
+                val = str(raw) if raw not in (None, "") else None
 
-        edits.append({"attributes": attrs})
-        row_map.append((r_idx, dirty_col))
+            if field_name == CUSTOMER_FIELD:
+                c_attrs[field_name] = val
+            else:
+                p_attrs[field_name] = val
 
-    log(f"Dirty rows found: {len(edits)}")
-    if not edits:
-        log("No dirty rows")
-        return 0
-
-    feats_json = json.dumps([{"attributes": e["attributes"]} for e in edits])
-    resp = requests.post(URL_PARENT + "/applyEdits", data={
-        "f": "json", "token": token,
-        "rollbackOnFailure": "True", "useGlobalIds": "True",
-        "updates": feats_json,
-    }, timeout=60)
-    js = resp.json()
-    log(f"applyEdits response: {json.dumps(js, ensure_ascii=False)[:500]}")
-
-    if "error" in js:
-        log(f"applyEdits error: {js['error']}")
-        return 1
-
-    for (excel_row, d_col), r in zip(row_map, js.get("updateResults", [])):
-        if r.get("success"):
-            sh.Cells(excel_row, d_col).Value = False
-            log(f"Row {excel_row}: OK")
+        if pgid:
+            p_attrs["globalid"] = pgid
+            updates_parent.append({"attributes": p_attrs})
         else:
-            log(f"Row {excel_row}: FAILED - {r.get('error', {}).get('description', '')}")
+            adds_parent.append({"attributes": p_attrs})
 
+        if c_attrs:
+            if cgid:
+                c_attrs["globalid"] = cgid
+                updates_child.append({"attributes": c_attrs})
+            else:
+                if pgid:
+                    c_attrs["parentglobalid"] = pgid
+                adds_child.append({"attributes": c_attrs})
+
+    log(f"Dirty rows: parent updates={len(updates_parent)} adds={len(adds_parent)}, "
+        f"child updates={len(updates_child)} adds={len(adds_child)}")
+
+    session = requests.Session()
+
+    def _apply(url, updates, adds, label):
+        payload = {"f": "json", "token": token}
+        if updates:
+            payload["updates"] = json.dumps(updates)
+        if adds:
+            payload["adds"] = json.dumps(adds)
+        if not updates and not adds:
+            return
+        r = session.post(url + "/applyEdits", data=payload, timeout=60)
+        r.raise_for_status()
+        js = r.json()
+        log(f"{label} applyEdits: {js}")
+
+    _apply(URL_PARENT, updates_parent, adds_parent, "PARENT")
+    _apply(URL_CHILD,  updates_child,  adds_child,  "CHILD")
+
+    # clear Dirty flags
+    xl.ScreenUpdating = False
+    for row_i, row_data in enumerate(data, start=2):
+        row = list(row_data)
+        if row[dirty_i]:
+            sh.Cells(row_i, dirty_i + 1).Value = False
     wb.Save()
+    xl.ScreenUpdating = True
+
     log("submit_registry complete")
     return 0
 
 
 # ---------- MAIN ----------
 
-def normalize_action(a):
-    a = (a or "").strip()
-    if a.lower().startswith("action="):
-        a = a.split("=", 1)[1].strip()
-    return a.lower()
-
-
-def main(argv=None):
-    if argv is None:
-        argv = sys.argv
-    if len(argv) < 3:
-        log("Usage: breedingSync.py <action> <workbook_path>")
-        return 1
-
-    action  = normalize_action(argv[1])
-    wb_path = argv[2]
-
+def main():
     log("=== breedingSync START ===")
-    log(f"action={action!r}  workbook={wb_path}")
+    if len(sys.argv) < 3:
+        log("Usage: breedingSync.py <action> <workbook_path>")
+        sys.exit(1)
+
+    action  = sys.argv[1]
+    wb_path = sys.argv[2]
+    log(f"action='{action}'  workbook={wb_path}")
     log(f"python={sys.executable}  cwd={os.getcwd()}")
 
-    if action == "import_registry":
-        return import_registry(wb_path) or 0
-
-    if action == "submit_registry":
-        return submit_registry(wb_path) or 0
-
-    log(f"Unknown action: {action!r}. Available: import_registry, submit_registry")
-    return 1
+    try:
+        if action == "import_registry":
+            sys.exit(import_registry(wb_path))
+        elif action == "submit_registry":
+            sys.exit(submit_registry(wb_path))
+        else:
+            log(f"Unknown action: {action}")
+            sys.exit(1)
+    except Exception as e:
+        import traceback
+        log(f"FATAL: {e}")
+        log(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
