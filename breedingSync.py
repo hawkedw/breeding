@@ -28,7 +28,7 @@ def log(msg: str):
 
 def write_report(lines: list):
     try:
-        with open(REPORT_PATH, "w", encoding="utf-8") as f:
+        with open(REPORT_PATH, "w", encoding="cp1251") as f:
             f.write("\n".join(lines))
     except Exception as e:
         log(f"write_report failed: {e}")
@@ -516,7 +516,7 @@ def submit_registry(wb_path: str):
             f"  Обновлено child: {len(updates_child)}, добавлено: {len(adds_child)}",
         ])
     else:
-        log("applyEdits had errors — Dirty NOT cleared")
+        log("апплуедитс had errors — Dirty NOT cleared")
         write_report(
             ["Ошибка при отправке. Изменения НЕ сохранены."] + errors
         )
