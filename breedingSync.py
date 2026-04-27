@@ -64,10 +64,12 @@ CUSTOMER_COLS  = [20, 21, 22, 23]
 CUSTOMER_FIELD = "customer"
 CUSTOMER_ALIAS = "Заказчик опыта"
 
-DIRTY_COL      = 29
-PARENT_GID_COL = 30
-CHILD_GID_COL  = 31
-TOTAL_COLS     = CHILD_GID_COL
+DIRTY_COL          = 29
+PARENT_GID_COL     = 30
+CHILD_GID_COL      = 31
+PARENT_OID_COL     = 32   # новая техколонка
+CHILD_OID_COL      = 33   # новая техколонка
+TOTAL_COLS         = CHILD_OID_COL
 
 EDITABLE_COLS    = set(range(3, 19))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
@@ -148,13 +150,6 @@ def excel_serial_to_dt(x: float) -> datetime.datetime:
     return EXCEL_EPOCH + datetime.timedelta(days=float(x))
 
 
-def _set_number_format(rng, fmt: str):
-    try:
-        rng.NumberFormat = fmt
-    except Exception as e:
-        log(f"NumberFormat failed ({e})")
-
-
 # ---------- QUERY LAYER ----------
 
 def query_layer(url, where="1=1", order_by=""):
@@ -199,6 +194,21 @@ def _attach_workbook(wb_path: str):
     raise RuntimeError(f"Книга не открыта в Excel: {wb_path}")
 
 
+def _get_oid_field(feats: list) -> str:
+    """Detect objectid field name from first feature (objectid / OBJECTID / FID)."""
+    if not feats:
+        return "objectid"
+    a = feats[0].get("attributes", {})
+    for name in ("objectid", "OBJECTID", "FID", "fid"):
+        if name in a:
+            return name
+    # fallback: first int-looking key that's not globalid
+    for k, v in a.items():
+        if isinstance(v, int) and "global" not in k.lower():
+            return k
+    return "objectid"
+
+
 # ---------- IMPORT ----------
 
 def import_registry(wb_path: str):
@@ -210,14 +220,20 @@ def import_registry(wb_path: str):
     child_feats = query_layer(URL_CHILD)
     log(f"Child: {len(child_feats)} records")
 
-    # build child lookup: parent_globalid -> list of customer values
+    parent_oid_field = _get_oid_field(parent_feats)
+    child_oid_field  = _get_oid_field(child_feats)
+    log(f"OID fields: parent='{parent_oid_field}' child='{child_oid_field}'")
+
+    # child lookup: parent_globalid -> list of (customer, globalid, objectid)
     child_map: dict[str, list] = {}
     for ft in child_feats:
         a = ft.get("attributes", {})
         pgid = a.get("parentglobalid") or a.get("ParentGlobalID") or a.get("parent_globalid")
-        cval = a.get(CUSTOMER_FIELD, "")
+        cval = a.get(CUSTOMER_FIELD, "") or ""
+        cgid = a.get("globalid") or a.get("GlobalID") or ""
+        coid = a.get(child_oid_field)
         if pgid:
-            child_map.setdefault(pgid, []).append(cval or "")
+            child_map.setdefault(pgid, []).append((cval, cgid, coid))
 
     # build headers
     col_map = {f["col"]: f["alias"] for f in FIELDS_PARENT}
@@ -233,6 +249,10 @@ def import_registry(wb_path: str):
             headers.append("parent_globalid")
         elif c == CHILD_GID_COL:
             headers.append("child_globalid")
+        elif c == PARENT_OID_COL:
+            headers.append("parent_objectid")
+        elif c == CHILD_OID_COL:
+            headers.append("child_objectid")
         else:
             headers.append("")
 
@@ -260,15 +280,21 @@ def import_registry(wb_path: str):
             else:
                 row[col - 1] = v
 
-        # customers
-        pgid = a.get("globalid") or a.get("GlobalID")
-        customers = child_map.get(pgid, [])
+        pgid = a.get("globalid") or a.get("GlobalID") or ""
+        poid = a.get(parent_oid_field)
+
+        # customers (first child only for now — each customer col = separate child)
+        children = child_map.get(pgid, [])
         for i, cc in enumerate(CUSTOMER_COLS):
-            row[cc - 1] = customers[i] if i < len(customers) else ""
+            row[cc - 1] = children[i][0] if i < len(children) else ""
+
+        # first child gid/oid
+        row[CHILD_GID_COL - 1] = children[0][1] if children else ""
+        row[CHILD_OID_COL - 1] = children[0][2] if children else ""
 
         row[DIRTY_COL - 1]      = False
-        row[PARENT_GID_COL - 1] = pgid or ""
-        row[CHILD_GID_COL - 1]  = ""
+        row[PARENT_GID_COL - 1] = pgid
+        row[PARENT_OID_COL - 1] = poid
         data.append(row)
 
     log(f"Data ready: {len(data)} rows. Attaching to Excel...")
@@ -286,16 +312,12 @@ def import_registry(wb_path: str):
             sh = wb.Worksheets.Add()
             sh.Name = SHEET_REGISTRY
 
-        # header
         sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
 
         if data:
             n = len(data)
-
-            # 1) write data block first (milkQuality_Forms pattern)
             sh.Range(sh.Cells(2, 1), sh.Cells(1 + n, TOTAL_COLS)).Value = _to_2d(data)
 
-            # 2) NumberFormat + NumberFormatLocal AFTER writing
             for f in FIELDS_PARENT:
                 col = f.get("col")
                 if not col or f["type"] != "DATE":
@@ -339,19 +361,23 @@ def submit_registry(wb_path: str):
         raise RuntimeError(f"Лист '{SHEET_REGISTRY}' не найден")
 
     last_col = TOTAL_COLS
-    last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row  # xlUp
+    last_row = sh.Cells(sh.Rows.Count, 1).End(-4162).Row
     if last_row < 2:
         log("Нет данных для отправки")
         return 0
 
     hdr_vals = list(sh.Range(sh.Cells(1, 1), sh.Cells(1, last_col)).Value[0])
-
     col_idx: dict[str, int] = {}
     for i, h in enumerate(hdr_vals):
         if h and str(h).strip():
             col_idx[str(h).strip()] = i
 
-    dirty_i = col_idx.get(DIRTY_ALIAS)
+    dirty_i      = col_idx.get(DIRTY_ALIAS)
+    pgid_i       = col_idx.get("parent_globalid")
+    poid_i       = col_idx.get("parent_objectid")
+    cgid_i       = col_idx.get("child_globalid")
+    coid_i       = col_idx.get("child_objectid")
+
     if dirty_i is None:
         raise RuntimeError(f"Колонка '{DIRTY_ALIAS}' не найдена")
 
@@ -369,8 +395,10 @@ def submit_registry(wb_path: str):
         if not row[dirty_i]:
             continue
 
-        pgid = row[col_idx.get("parent_globalid", -1)] if "parent_globalid" in col_idx else None
-        cgid = row[col_idx.get("child_globalid",  -1)] if "child_globalid"  in col_idx else None
+        pgid = row[pgid_i] if pgid_i is not None else None
+        poid = row[poid_i] if poid_i is not None else None
+        cgid = row[cgid_i] if cgid_i is not None else None
+        coid = row[coid_i] if coid_i is not None else None
 
         p_attrs: dict = {}
         c_attrs: dict = {}
@@ -382,12 +410,11 @@ def submit_registry(wb_path: str):
             if field_name in SYS_SKIP:
                 continue
 
-            raw = row[fi]
             excel_col = fi + 1
-
             if excel_col not in EDITABLE_COLS:
                 continue
 
+            raw    = row[fi]
             f_type = next((f["type"] for f in FIELDS_PARENT if f["n"] == field_name), "TEXT")
 
             if f_type == "DATE":
@@ -415,14 +442,17 @@ def submit_registry(wb_path: str):
             else:
                 p_attrs[field_name] = val
 
-        if pgid:
+        # parent: update requires objectid; add uses negative placeholder
+        if pgid and poid is not None:
+            p_attrs["objectid"] = int(poid)
             p_attrs["globalid"] = pgid
             updates_parent.append({"attributes": p_attrs})
         else:
             adds_parent.append({"attributes": p_attrs})
 
         if c_attrs:
-            if cgid:
+            if cgid and coid is not None:
+                c_attrs["objectid"] = int(coid)
                 c_attrs["globalid"] = cgid
                 updates_child.append({"attributes": c_attrs})
             else:
