@@ -3,42 +3,60 @@ Option Explicit
 
 ' ----------------------------------------------------------------
 ' breedingSync.py - VBA bridge
-' Shell не блокирует VBA => книга остаётся открытой и доступна
-' Python цепляется к ней через GetActiveObject (win32com).
+' RunPythonWithWb из Module2 запускает Python асинхронно,
+' ждёт _done.flag, затем читает _report.txt и показывает MsgBox.
 ' ----------------------------------------------------------------
 
-Private Sub RunPythonWithWb(ByVal action As String)
-    Dim py      As String
-    Dim script  As String
-    Dim wb      As String
-    Dim cmd     As String
+Private Sub RunAndReport(ByVal action As String)
+    Dim rc         As Long
+    Dim reportFile As String
+    Dim fNum       As Integer
+    Dim line       As String
+    Dim msg        As String
 
-    py     = "C:\Python311\python.exe"
-    script = ThisWorkbook.Path & "\breedingSync.py"
-    wb     = ThisWorkbook.FullName
+    reportFile = ThisWorkbook.Path & "\_report.txt"
 
-    ' cmd /c "команда" - внешние кавычки обязательны когда внутри есть пути с пробелами
-    cmd = "cmd.exe /c " & Chr(34) & _
-          Chr(34) & py & Chr(34) & " " & _
-          Chr(34) & script & Chr(34) & " " & _
-          action & " " & _
-          Chr(34) & wb & Chr(34) & _
-          Chr(34)
+    ' удалить старый отчёт перед запуском
+    On Error Resume Next
+    Kill reportFile
+    On Error GoTo 0
 
-    Shell cmd, vbHide
+    rc = Module2.RunPythonWithWb(action)
+
+    ' читаем отчёт
+    If Dir(reportFile) <> "" Then
+        fNum = FreeFile
+        Open reportFile For Input As #fNum
+        Do While Not EOF(fNum)
+            Line Input #fNum, line
+            msg = msg & line & vbCrLf
+        Loop
+        Close #fNum
+        On Error Resume Next
+        Kill reportFile
+        On Error GoTo 0
+    End If
+
+    If rc <> 0 Then
+        If Len(msg) = 0 Then msg = "Python завершился с ошибкой или таймаут."
+        MsgBox msg, vbCritical, "breedingSync — ошибка"
+    Else
+        If Len(msg) = 0 Then msg = "Готово."
+        MsgBox msg, vbInformation, "breedingSync"
+    End If
 End Sub
 
 
 ' --- публичные процедуры (вешай на кнопки) ---
 
 Public Sub ImportRegistry()
-    RunPythonWithWb "import_registry"
+    RunAndReport "import_registry"
 End Sub
 
 Public Sub SubmitRegistry()
-    RunPythonWithWb "submit_registry"
+    RunAndReport "submit_registry"
 End Sub
 
 Public Sub SaveRegistry()
-    RunPythonWithWb "submit_registry"
+    RunAndReport "submit_registry"
 End Sub
