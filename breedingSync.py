@@ -85,6 +85,7 @@ FIELDS_PARENT = [
     {"n": "plantingDate",     "alias": "Дата посева",                          "type": "DATE",   "col": 16},
     {"n": "haverstDate",      "alias": "Дата уборки",                          "type": "DATE",   "col": 17},
     {"n": "report",           "alias": "Отчёт (Выводы, рекомендации)",         "type": "TEXT",   "col": 18},
+    {"n": "season",           "alias": "Год проведения опыта",                 "type": "TEXT",   "col": 19},
     {"n": "created_date",     "alias": "created_date",                         "type": "DATE",   "col": 27},
     {"n": "last_edited_date", "alias": "last_edited_date",                     "type": "DATE",   "col": 28},
 ]
@@ -100,7 +101,7 @@ PARENT_OID_COL = 32
 CHILD_OID_COL  = 33
 TOTAL_COLS     = CHILD_OID_COL
 
-EDITABLE_COLS    = set(range(3, 19))
+EDITABLE_COLS    = set(range(3, 20))
 SYS_SKIP         = {"created_user", "created_date", "last_edited_user", "last_edited_date"}
 DATE_ONLY_FIELDS = {"plantingDate", "haverstDate"}
 
@@ -341,7 +342,9 @@ def import_registry(wb_path: str):
             sh = wb.Worksheets.Add()
             sh.Name = SHEET_REGISTRY
 
-        sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS)).Value = _to_2d([headers])
+        hdr_range = sh.Range(sh.Cells(1, 1), sh.Cells(1, TOTAL_COLS))
+        hdr_range.Value = _to_2d([headers])
+        hdr_range.Font.Bold = True
 
         if data:
             n = len(data)
