@@ -185,6 +185,24 @@ def _arc_value_to_excel_serial(v: float) -> float:
         return float(v)
 
 
+def _is_dirty(val) -> bool:
+    """
+    Нормализует значение ячейки Dirty с учётом русской локали Excel.
+    win32com может вернуть:
+      - bool True/False
+      - строку "ИСТИНА"/"ЛОЖЬ" (русская локаль)
+      - строку "TRUE"/"FALSE" (английская)
+      - число 1/0
+    """
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.strip().upper() in ("TRUE", "ИСТИНА", "1")
+    return False
+
+
 def attach_workbook(path: str):
     xl = win32.Dispatch("Excel.Application")
     abs_path = os.path.abspath(path)
@@ -291,7 +309,6 @@ def build_form5_group_rows(sh, fields_f5, header_row=3):
         rg.WrapText = True
 
     # row 1 (groups)
-    # row 1 (groups)
     for g in FORM5_GROUPS:
         c1 = col_by_key.get(g["start"])
         c2 = g.get("end_col") or col_by_key.get(g["end"])
@@ -305,8 +322,6 @@ def build_form5_group_rows(sh, fields_f5, header_row=3):
             col_by_key.get(sg["end"]),
             sg["text"]
         )
-
-        merge_write(2, col_by_key.get(sg["start"]), col_by_key.get(sg["end"]), sg["text"])
 
     sh.Parent.Application.Calculate()
 
@@ -350,7 +365,6 @@ def color_form5_columns(sh, cols):
     set_block(72, 102, "D9E1F2")   # BT..CX
     set_block(103, 111, "D0CECE")  # CY..DG
     set_block(112, 112, "EC7524")  # DH
-
 
     used = sh.Range(sh.Cells(1, 1), sh.Cells(last_row, last_col))
     used.Borders.LineStyle = 1
@@ -691,6 +705,7 @@ def push_sheet(wb, sheet_name: str, fields, url: str):
         if not oid_col and not gid_col:
             log("Neither OBJECTID nor GlobalID column found")
             return
+
         # пересчитываем last_row по "надежным" колонкам (A часто пустая и режет диапазон)
         last_row_dirty = sh.Cells(sh.Rows.Count, dirty_col).End(-4162).Row
         last_row_oid = sh.Cells(sh.Rows.Count, oid_col).End(-4162).Row if oid_col else 0
@@ -715,17 +730,6 @@ def push_sheet(wb, sheet_name: str, fields, url: str):
         except Exception as ex:
             log(f"dirty debug read failed: {ex}")
 
-        data_range = sh.Range(
-            sh.Cells(header_row + 1, 1),
-            sh.Cells(last_row, last_col),
-        ).Value
-
-
-        data_range = sh.Range(
-            sh.Cells(header_row + 1, 1),
-            sh.Cells(last_row, last_col),
-        ).Value
-
         alias_to_name = {}
         name_to_type = {}
         for f in fields:
@@ -747,7 +751,8 @@ def push_sheet(wb, sheet_name: str, fields, url: str):
         for r_idx, row in enumerate(data_range, start=header_row + 1):
             row = list(row)
             dirty_val = row[dirty_col - 1]
-            if not dirty_val:
+            # Нормализуем с учётом русской локали Excel (ИСТИНА/ЛОЖЬ)
+            if not _is_dirty(dirty_val):
                 continue
 
             oid_val_raw = row[oid_col - 1] if oid_col else None
@@ -816,22 +821,15 @@ def push_sheet(wb, sheet_name: str, fields, url: str):
                     attrs[name] = v
 
             edits.append({"attributes": attrs, "row": r_idx})
-        # ... после цикла, где ты наполняешь edits (после for r_idx, row in enumerate(data_range...):)
 
-        cnt_dirty = 0
-        cnt_dirty_with_oid = 0
-        for r_idx, row in enumerate(data_range, start=header_row + 1):
-            row = list(row)
-            if row[dirty_col - 1]:
-                cnt_dirty += 1
-                if oid_col and _to_int_oid(row[oid_col - 1]) not in (None, ""):
-                    cnt_dirty_with_oid += 1
+        cnt_dirty = sum(1 for row in data_range if _is_dirty(list(row)[dirty_col - 1]))
+        cnt_dirty_with_oid = sum(
+            1 for row in data_range
+            if _is_dirty(list(row)[dirty_col - 1])
+            and oid_col
+            and _to_int_oid(list(row)[oid_col - 1]) not in (None, "")
+        )
         log(f"dirty_total={cnt_dirty} dirty_with_oid={cnt_dirty_with_oid}")
-
-        if not edits:
-            log("No dirty rows")
-            return
-
 
         if not edits:
             log("No dirty rows")
@@ -872,6 +870,7 @@ def push_sheet(wb, sheet_name: str, fields, url: str):
         for e, r in zip(edits, results):
             row_idx = e["row"]
             if r.get("success"):
+                # Явно записываем Python False — Excel получит булево ЛОЖЬ (не строку)
                 sh.Cells(row_idx, dirty_col).Value = False
             else:
                 log(f"Row {row_idx} update failed in {sheet_name}: {r}")
